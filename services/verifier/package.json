@@ -8,6 +8,7 @@
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "local": "tsx scripts/local.ts",
+    "stack": "tsx scripts/stack.ts",
     "claim": "tsx scripts/claim.ts",
     "e2e": "tsx scripts/e2e.ts",
     "test": "node --import tsx --test test/scenarios.test.ts test/server.test.ts",

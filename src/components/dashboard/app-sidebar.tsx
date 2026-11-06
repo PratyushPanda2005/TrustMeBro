@@ -3,7 +3,6 @@
 import { Suspense } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { RotateCcw } from "lucide-react"
 
 import { Logo } from "@/components/landing/logo"
 import {
@@ -26,9 +25,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { getParty } from "@/lib/trade/engine"
-import { personas } from "@/lib/trade/seed"
-import { actions, useTrade } from "@/lib/trade/store"
+import { getParty, useTrade } from "@/lib/trade/store"
 
 import { navigation, roleFromPath, roles } from "./nav"
 
@@ -37,7 +34,8 @@ function SidebarBody() {
   const router = useRouter()
   const state = useTrade()
   const role = roleFromPath(pathname)
-  const persona = role === "admin" ? null : getParty(state, personas[role])
+  const persona =
+    role === "admin" ? null : getParty(state, state.personas[role])
   const items = navigation[role]
 
   return (
@@ -91,15 +89,8 @@ function SidebarBody() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={actions.reset}>
-              <RotateCcw />
-              <span>Reset demo data</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarFooter className="px-4 text-xs text-muted-foreground">
+        {state.network.name}, chain {state.network.chainId}
       </SidebarFooter>
     </>
   )

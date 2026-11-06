@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/table"
 import { amount, pct, usdt } from "@/lib/trade/format"
 import { investorProfit } from "@/lib/trade/profit"
-import { personas } from "@/lib/trade/seed"
 import { useTrade } from "@/lib/trade/store"
 
 import { MonthlyBars } from "../charts"
@@ -31,10 +30,8 @@ const useInvestor = () => {
   const state = useTrade()
   return {
     state,
-    profit: investorProfit(state, personas.investor),
-    open: state.deals.filter(
-      (deal) => deal.state === "Approved" || deal.state === "Funding",
-    ),
+    profit: investorProfit(state, state.personas.investor),
+    open: state.deals.filter((deal) => deal.state === "Verified"),
   }
 }
 
@@ -65,8 +62,9 @@ export function InvestorOverview() {
           icon={Coins}
         />
         <StatCard
-          label="Ready to claim"
-          value={usdt(profit.claimable)}
+          label="Received"
+          value={usdt(profit.received)}
+          hint="Paid straight to your wallet"
           icon={Wallet}
         />
       </StatGrid>
@@ -74,7 +72,7 @@ export function InvestorOverview() {
         <CardHeader>
           <CardTitle>Open deals</CardTitle>
           <CardDescription>
-            Approved invoices looking for funding
+            Shipments the contract has verified, looking for one investor
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -96,7 +94,7 @@ export function InvestorDeals() {
     <>
       <PageHeader
         title="Open deals"
-        description="Check both scores and the terms before you fund."
+        description="Check the evidence, both scores and the terms before you fund."
       />
       <Card>
         <CardContent>
@@ -118,7 +116,7 @@ export function InvestorPortfolio() {
     <>
       <PageHeader
         title="Portfolio"
-        description="Your fractional deal tokens."
+        description="The receivable NFTs you hold."
       />
       <Card>
         <CardContent>
@@ -129,12 +127,12 @@ export function InvestorPortfolio() {
                 <TableHead>Goods</TableHead>
                 <TableHead className="text-right">Principal (USDT)</TableHead>
                 <TableHead className="text-right">Yield</TableHead>
-                <TableHead className="text-right">Claimed (USDT)</TableHead>
+                <TableHead className="text-right">Received (USDT)</TableHead>
                 <TableHead>State</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {profit.held.map(({ deal, position }) => (
+              {profit.held.map((deal) => (
                 <TableRow key={deal.id}>
                   <TableCell>
                     <Link
@@ -146,15 +144,13 @@ export function InvestorPortfolio() {
                   </TableCell>
                   <TableCell>{deal.goods}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {amount(position.amount)}
+                    {amount(deal.terms?.advance ?? 0)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {pct(deal.terms?.yieldBps ?? 0)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {position.claimed === undefined
-                      ? "-"
-                      : amount(position.claimed)}
+                    {amount(deal.paidToInvestor)}
                   </TableCell>
                   <TableCell>
                     <StateBadge state={deal.state} />
@@ -175,13 +171,13 @@ export function InvestorReturns() {
     <>
       <PageHeader
         title="Returns"
-        description="Yield earned on settled deals. Refunds aren't profit, so they aren't counted."
+        description="Yield earned on settled deals."
       />
       <StatGrid>
         <StatCard label="Yield earned" value={usdt(profit.earned)} />
         <StatCard label="Expected yield" value={usdt(profit.expected)} />
         <StatCard label="Deployed" value={usdt(profit.deployed)} />
-        <StatCard label="Ready to claim" value={usdt(profit.claimable)} />
+        <StatCard label="Received" value={usdt(profit.received)} />
       </StatGrid>
       <Card>
         <CardHeader>

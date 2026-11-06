@@ -15,24 +15,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { getParty } from "@/lib/trade/engine"
 import { date, pct } from "@/lib/trade/format"
-import { dealTerms, partyScoreView, riskBps, scoreBps } from "@/lib/trade/score"
-import { personas } from "@/lib/trade/seed"
-import { useTrade } from "@/lib/trade/store"
+import { partyScoreView, riskFromTrust } from "@/lib/trade/score"
+import { getParty, useTrade } from "@/lib/trade/store"
 
 import { ScoreLine } from "./charts"
 import { PageHeader, ScoreBadge, StatCard, StatGrid } from "./parts"
 
-/** Score detail for exporters (Risk Score) and importers (Trust Score). */
+/** Score detail for exporters (Trust Score) and importers (Risk Score). */
 export function ScorePage({ role }: { role: "exporter" | "importer" }) {
   const state = useTrade()
-  const party = getParty(state, personas[role])
+  const party = getParty(state, state.personas[role])
   const view = partyScoreView(party)
-  const trust = scoreBps(party.rep)
   const exporter = role === "exporter"
-  const terms = exporter ? dealTerms(trust, 5_000) : dealTerms(5_000, trust)
-  const shown = (bps: number) => (exporter ? riskBps(bps) : bps)
+  const shown = (bps: number) => (exporter ? bps : riskFromTrust(bps))
 
   return (
     <>
@@ -40,8 +36,8 @@ export function ScorePage({ role }: { role: "exporter" | "importer" }) {
         title={view.label}
         description={
           exporter
-            ? "Lower is safer. Honest deals bring it down, and a falsified claim sends it up."
-            : "Higher is better. On-time payments lift it and lower the yield investors need."
+            ? "Higher is better. It sets your advance, and a falsified claim drops it for good."
+            : "Lower is better. It's the yield investors earn on your deals, and on-time payments reduce it."
         }
       />
       <StatGrid>
@@ -49,21 +45,21 @@ export function ScorePage({ role }: { role: "exporter" | "importer" }) {
         {exporter ? (
           <StatCard
             label="Advance you qualify for"
-            value={pct(terms.advanceBps, 1)}
-            hint="From 60% up to 90%"
+            value={pct(party.advanceBps)}
+            hint="Your score, capped at 90%"
           />
         ) : (
           <StatCard
-            label="Yield your score sets"
-            value={pct(terms.yieldBps)}
-            hint="From 5% down to 2%"
+            label="Yield investors earn"
+            value={pct(party.riskBps)}
+            hint="Always between 2% and 8%"
           />
         )}
         <StatCard label="Band" value={<ScoreBadge view={view} />} />
         <StatCard
           label="Recorded events"
           value={party.history.length}
-          hint="Stored onchain at integration"
+          hint="Recorded onchain"
         />
       </StatGrid>
       <Card>

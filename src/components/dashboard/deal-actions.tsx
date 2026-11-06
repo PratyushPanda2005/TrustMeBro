@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/card"
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -28,12 +27,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
-import { Switch } from "@/components/ui/switch"
-import { claimable, getParty, raised } from "@/lib/trade/engine"
-import { amount, usdt } from "@/lib/trade/format"
-import { personas } from "@/lib/trade/seed"
+import { usdt } from "@/lib/trade/format"
+import { SHIPMENT_STATUS } from "@/lib/trade/score"
 import { actions, useTrade } from "@/lib/trade/store"
-import type { Claims, Deal, Role, Scenario } from "@/lib/trade/types"
+import type { Deal, Role } from "@/lib/trade/types"
 
 function ActionButton({
   label,
@@ -83,90 +80,147 @@ function Panel({
   )
 }
 
-const scenarios: { value: Scenario; label: string }[] = [
+const scenarios = [
   { value: "honest", label: "Honest: everything matches" },
-  { value: "fake-weight", label: "Cheat: weight comes back false" },
-  { value: "fake-docs", label: "Cheat: documents come back false" },
-  { value: "overpriced", label: "Overpriced: verifier quotes 5.00 USDC" },
+  { value: "lag", label: "Tracking lag: Pending, then Verified" },
+  { value: "short-weight", label: "Cheat: weighbridge reads 80% of the claim" },
+  { value: "fake-docs", label: "Cheat: documents don't match" },
+  { value: "over-weight", label: "Mismatch: more goods than claimed" },
+  { value: "stuck", label: "Cheat: status never reached" },
 ]
 
-const claimFields: { key: keyof Claims; label: string; hint: string }[] = [
-  { key: "weight", label: "Weight", hint: "Matches the declared weight" },
-  { key: "statusCode", label: "Status", hint: "Shipment status is correct" },
-  {
-    key: "documents",
-    label: "Documents",
-    hint: "Shipping documents check out",
-  },
-]
+const claimableStatuses = [3, 4, 5].map((value) => ({
+  value: String(value),
+  label: SHIPMENT_STATUS[value],
+}))
+
+function PickOne({
+  label,
+  items,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string
+  items: { value: string; label: string }[]
+  value: string
+  onChange: (value: string) => void
+  hint?: string
+}) {
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      <Select
+        value={value}
+        items={items}
+        onValueChange={(next) => next && onChange(next)}
+      >
+        <SelectTrigger aria-label={label} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {items.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      {hint ? <FieldDescription>{hint}</FieldDescription> : null}
+    </Field>
+  )
+}
 
 function ClaimsForm({ deal }: { deal: Deal }) {
-  const [claims, setClaims] = useState<Claims>({
-    weight: true,
-    statusCode: true,
-    documents: true,
+  const [form, setForm] = useState({
+    declaredKg: "10000",
+    status: "3",
+    documents: `Invoice, packing list and bill of lading for ${deal.invoiceRef}`,
+    containerNo: `MSKU${1_000_000 + Number(deal.id)}`,
+    blRef: `BL-${deal.id}`,
+    scenario: "honest",
   })
-  const [scenario, setScenario] = useState<Scenario>("honest")
-  const anyFalse = Object.values(claims).some((claim) => !claim)
+  const set = (key: keyof typeof form) => (value: string) =>
+    setForm((current) => ({ ...current, [key]: value }))
+  const kg = Number(form.declaredKg)
+  const ready = kg > 0 && form.containerNo && form.blRef && form.documents
 
   return (
     <Panel
       title="Declare shipment claims"
-      description="Once you've shipped, commit your claims. The agent then pays for the check by itself."
+      description="Once the carrier has the goods, commit your claims. The agent checks them straight away, and investors see the result."
     >
       <FieldGroup>
-        {claimFields.map((field) => (
-          <Field key={field.key} orientation="horizontal">
-            <FieldContent>
-              <FieldLabel htmlFor={field.key}>{field.label}</FieldLabel>
-              <FieldDescription>{field.hint}</FieldDescription>
-            </FieldContent>
-            <Switch
-              id={field.key}
-              checked={claims[field.key]}
-              onCheckedChange={(checked) =>
-                setClaims((value) => ({ ...value, [field.key]: checked }))
-              }
-            />
-          </Field>
-        ))}
         <Field>
-          <FieldLabel>Demo: what the verifier will observe</FieldLabel>
-          <Select
-            value={scenario}
-            items={scenarios}
-            onValueChange={(value) => value && setScenario(value)}
-          >
-            <SelectTrigger aria-label="Verifier scenario" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {scenarios.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <FieldLabel htmlFor="declared-kg">Declared weight (kg)</FieldLabel>
+          <Input
+            id="declared-kg"
+            type="number"
+            min="1"
+            value={form.declaredKg}
+            onChange={(event) => set("declaredKg")(event.target.value)}
+          />
           <FieldDescription>
-            Placeholder control, removed once the real verifier is connected.
+            The weighbridge reading must land within 3% of this.
           </FieldDescription>
         </Field>
-        {anyFalse ? (
-          <Alert>
-            <AlertTitle>This cancels the deal</AlertTitle>
-            <AlertDescription>
-              Investors are refunded, and there is no penalty because you told
-              the truth.
-            </AlertDescription>
-          </Alert>
-        ) : null}
+        <PickOne
+          label="Shipment status"
+          items={claimableStatuses}
+          value={form.status}
+          onChange={set("status")}
+        />
+        <Field>
+          <FieldLabel htmlFor="documents">Document bundle</FieldLabel>
+          <Input
+            id="documents"
+            value={form.documents}
+            onChange={(event) => set("documents")(event.target.value)}
+          />
+          <FieldDescription>Only its hash goes onchain.</FieldDescription>
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="container">Container number</FieldLabel>
+            <Input
+              id="container"
+              value={form.containerNo}
+              onChange={(event) => set("containerNo")(event.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="bl-ref">Bill of lading</FieldLabel>
+            <Input
+              id="bl-ref"
+              value={form.blRef}
+              onChange={(event) => set("blRef")(event.target.value)}
+            />
+          </Field>
+        </div>
+        <PickOne
+          label="Demo: what the verifier will observe"
+          items={scenarios}
+          value={form.scenario}
+          onChange={set("scenario")}
+          hint="The shipment data is simulated, so this picks what the world reports."
+        />
         <div>
           <ActionButton
             label="Submit claims"
-            onAction={() => actions.declare(deal.id, claims, scenario)}
+            disabled={!ready}
+            onAction={() =>
+              actions.declare({
+                dealId: deal.id,
+                declaredKg: kg,
+                status: Number(form.status),
+                documents: form.documents,
+                containerNo: form.containerNo,
+                blRef: form.blRef,
+                scenario: form.scenario,
+              })
+            }
           />
         </div>
       </FieldGroup>
@@ -174,64 +228,38 @@ function ClaimsForm({ deal }: { deal: Deal }) {
   )
 }
 
-function BuyForm({ deal }: { deal: Deal }) {
-  const state = useTrade()
-  const investor = getParty(state, personas.investor)
-  const remaining = deal.target - raised(deal)
-  const [value, setValue] = useState("")
+function PayForm({ deal }: { deal: Deal }) {
+  const outstanding = deal.amount - deal.paid
+  const [value, setValue] = useState(String(outstanding))
   const parsed = Number(value)
-  const invalid = value !== "" && (parsed <= 0 || parsed > remaining)
-
-  if (!investor.allowlisted) {
-    return (
-      <Alert>
-        <AlertTitle>Not allowlisted</AlertTitle>
-        <AlertDescription>
-          An admin has to allowlist you before you can buy deal tokens.
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
+  const invalid = parsed <= 0 || parsed > outstanding
   return (
     <Panel
-      title="Buy deal tokens"
-      description={`${usdt(remaining)} left to raise. Your USDT stays locked until the check matches.`}
+      title="Pay this invoice"
+      description={`${usdt(outstanding)} outstanding. The investor is paid first, and the exporter gets the rest.`}
     >
       <FieldGroup>
         <Field data-invalid={invalid || undefined}>
-          <FieldLabel htmlFor="buy-amount">Amount (USDT)</FieldLabel>
+          <FieldLabel htmlFor="pay-amount">Amount (USDT)</FieldLabel>
           <Input
-            id="buy-amount"
+            id="pay-amount"
             type="number"
-            min="1"
-            max={remaining}
+            min="0"
+            max={outstanding}
             value={value}
             aria-invalid={invalid}
             onChange={(event) => setValue(event.target.value)}
           />
           <FieldDescription>
-            {invalid
-              ? `Enter up to ${amount(remaining)} USDT.`
-              : "Fractional: buy any part of the deal."}
+            Part payments follow the same order.
           </FieldDescription>
         </Field>
-        <div className="flex flex-wrap gap-2">
+        <div>
           <ActionButton
-            label="Buy tokens"
-            disabled={!value || invalid}
-            onAction={async () => {
-              const ok = await actions.buy({
-                dealId: deal.id,
-                investorId: investor.id,
-                amount: parsed,
-              })
-              if (ok) setValue("")
-            }}
+            label="Pay"
+            disabled={invalid}
+            onAction={() => actions.pay(deal.id, parsed)}
           />
-          <Button variant="outline" onClick={() => setValue(String(remaining))}>
-            Fill the rest
-          </Button>
         </div>
       </FieldGroup>
     </Panel>
@@ -242,15 +270,58 @@ function BuyForm({ deal }: { deal: Deal }) {
 export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
   const state = useTrade()
 
-  if (role === "exporter" && deal.state === "Funded") {
+  if (!state.network.serverSigning) {
+    return (
+      <Alert>
+        <AlertTitle>Connect a wallet to act</AlertTitle>
+        <AlertDescription>
+          This network signs in your wallet, which arrives with the Whitechain
+          deployment.
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (role === "exporter" && deal.state === "Approved") {
     return <ClaimsForm deal={deal} />
+  }
+
+  if (
+    (deal.state === "Claimed" || deal.state === "Pending") &&
+    role !== "investor"
+  ) {
+    return (
+      <Alert>
+        <AlertTitle>The agent is checking this shipment</AlertTitle>
+        <AlertDescription>
+          {deal.state === "Pending"
+            ? "Tracking is behind the claim, so it will check again."
+            : "This takes a few seconds, and the contract decides the result."}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (role === "exporter" && deal.state === "Created") {
+    return (
+      <Panel
+        title="Waiting on the importer"
+        description="Nothing moves until they approve. You can still cancel."
+      >
+        <ActionButton
+          label="Cancel deal"
+          variant="outline"
+          onAction={() => actions.cancel(deal.id)}
+        />
+      </Panel>
+    )
   }
 
   if (role === "importer" && deal.state === "Created") {
     return (
       <Panel
         title="Approve this invoice"
-        description="Approving accepts the debt onchain and fixes the deal terms."
+        description="Approving accepts the debt, and agrees that payment goes to the TrustMeBro contract."
       >
         <ActionButton
           label="Approve invoice"
@@ -260,43 +331,22 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
     )
   }
 
-  if (role === "importer" && deal.state === "Released") {
+  if (role === "importer" && deal.state === "Funded") {
+    return <PayForm deal={deal} />
+  }
+
+  if (role === "investor" && deal.state === "Verified" && deal.terms) {
     return (
       <Panel
-        title="Pay this invoice"
-        description={`Pay ${usdt(deal.amount)}. The contract splits it between investors, the platform and the exporter.`}
+        title="Fund this deal"
+        description={`Pay ${usdt(deal.terms.advance)} and receive the receivable NFT. You get ${usdt(deal.terms.investorDue)} back on repayment.`}
       >
         <ActionButton
-          label="Pay invoice"
-          onAction={() => actions.settle(deal.id)}
+          label="Fund deal"
+          onAction={() => actions.fund(deal.id)}
         />
       </Panel>
     )
-  }
-
-  if (role === "investor") {
-    if (deal.state === "Approved" || deal.state === "Funding") {
-      return <BuyForm deal={deal} />
-    }
-    const owed = claimable(deal, personas.investor)
-    if (owed > 0) {
-      return (
-        <Panel
-          title={deal.state === "Settled" ? "Redeem" : "Claim refund"}
-          description={`${usdt(owed)} is ready to claim.`}
-        >
-          <ActionButton
-            label={deal.state === "Settled" ? "Redeem" : "Claim refund"}
-            onAction={() =>
-              actions.redeem({
-                dealId: deal.id,
-                investorId: personas.investor,
-              })
-            }
-          />
-        </Panel>
-      )
-    }
   }
 
   if (role === "admin") {
@@ -306,16 +356,16 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
         <Alert>
           <AlertTitle>Waiting on a human</AlertTitle>
           <AlertDescription>
-            The agent refused this quote. Decide on the Agent page.
+            The agent stopped at a spending limit. Decide on the Agent page.
           </AlertDescription>
         </Alert>
       )
     }
-    if (deal.state === "Released") {
+    if (deal.canDefault) {
       return (
         <Panel
           title="Mark as defaulted"
-          description="Use once the due date and grace period have passed. Only the importer's score drops."
+          description="The due date and grace period have passed. Only the importer's score drops."
         >
           <ActionButton
             label="Mark default"
@@ -325,11 +375,11 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
         </Panel>
       )
     }
-    if (deal.state === "Funded" || deal.state === "Shipped") {
+    if (deal.canExpire) {
       return (
         <Panel
           title="Expire this deal"
-          description="Use when no verification arrived by the deadline. Investors are refunded and no score changes."
+          description="Nobody funded it in time. No score changes."
         >
           <ActionButton
             label="Expire deal"

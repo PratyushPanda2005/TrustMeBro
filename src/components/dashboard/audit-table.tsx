@@ -33,7 +33,11 @@ export function AuditTable({ entries }: { entries: AuditEntry[] }) {
             <TableCell>{entry.dealId}</TableCell>
             <TableCell>
               <Badge
-                variant={entry.kind === "refusal" ? "destructive" : "secondary"}
+                variant={
+                  ["refused", "error"].includes(entry.kind)
+                    ? "destructive"
+                    : "secondary"
+                }
               >
                 {entry.kind}
               </Badge>
@@ -48,7 +52,7 @@ export function AuditTable({ entries }: { entries: AuditEntry[] }) {
             </TableCell>
             <TableCell>
               <code className="font-mono text-xs text-muted-foreground">
-                {entry.prevHash} → {entry.hash}
+                {entry.prevHash.slice(0, 6)} → {entry.hash.slice(0, 6)}
               </code>
             </TableCell>
           </TableRow>

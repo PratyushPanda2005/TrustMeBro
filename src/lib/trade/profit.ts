@@ -1,6 +1,5 @@
-import { claimable, raised } from "./engine"
-import { BPS, VERIFY_PRICE } from "./score"
 import { month } from "./format"
+import { VERIFY_PRICE } from "./score"
 import type { Deal, TradeState } from "./types"
 
 type Row = Record<string, number | string>
@@ -30,31 +29,25 @@ function byMonth<T extends string>(
 const sum = (values: number[]) =>
   Math.round(values.reduce((total, value) => total + value, 0) * 100) / 100
 
+const isFunded = (deal: Deal) => deal.fundedAt !== undefined
 const settled = (deal: Deal) => deal.state === "Settled"
 
 export function investorProfit(state: TradeState, investorId: string) {
-  const held = state.deals.flatMap((deal) =>
-    deal.positions
-      .filter((position) => position.investorId === investorId)
-      .map((position) => ({ deal, position })),
-  )
-  const live = held.filter(({ deal }) =>
-    ["Funding", "Funded", "Shipped", "Released"].includes(deal.state),
-  )
-  const yieldOf = ({ deal, position }: (typeof held)[number]) =>
-    Math.round(position.amount * (deal.terms?.yieldBps ?? 0)) / BPS
-  const realised = held.filter(({ deal }) => settled(deal))
+  const held = state.deals.filter((deal) => deal.investorId === investorId)
+  const live = held.filter((deal) => deal.state === "Funded")
+  const yieldOf = (deal: Deal) => deal.terms?.yieldAmount ?? 0
+  const done = held.filter(settled)
   return {
     held,
-    deployed: sum(live.map(({ position }) => position.amount)),
+    deployed: sum(live.map((deal) => deal.terms?.advance ?? 0)),
     expected: sum(live.map(yieldOf)),
-    earned: sum(realised.map(yieldOf)),
-    claimable: sum(held.map(({ deal }) => claimable(deal, investorId))),
+    earned: sum(done.map(yieldOf)),
+    received: sum(held.map((deal) => deal.paidToInvestor)),
     monthly: byMonth(
-      realised.map((item) => ({
-        at: item.deal.settledAt as number,
+      done.map((deal) => ({
+        at: deal.closedAt ?? deal.dueAt,
         key: "yield" as const,
-        value: yieldOf(item),
+        value: yieldOf(deal),
       })),
       ["yield"],
     ),
@@ -63,32 +56,34 @@ export function investorProfit(state: TradeState, investorId: string) {
 
 export function exporterProfit(state: TradeState, exporterId: string) {
   const deals = state.deals.filter((deal) => deal.exporterId === exporterId)
-  const released = deals.filter((deal) => deal.releasedAt)
-  const done = deals.filter(settled)
-  const advances = sum(released.map((deal) => deal.target))
-  const atSettlement = sum(done.map((deal) => deal.waterfall?.exporter ?? 0))
+  const funded = deals.filter(isFunded)
+  const rest = (deal: Deal) => deal.paid - deal.paidToInvestor
+  const advances = sum(funded.map((deal) => deal.terms?.exporterNet ?? 0))
+  const atSettlement = sum(funded.map(rest))
   return {
     deals,
     advances,
     atSettlement,
     received: sum([advances, atSettlement]),
     cost: sum(
-      done.map(
-        (deal) => deal.amount - deal.target - (deal.waterfall?.exporter ?? 0),
-      ),
+      deals
+        .filter(settled)
+        .map((deal) => (deal.terms?.fee ?? 0) + (deal.terms?.yieldAmount ?? 0)),
     ),
     monthly: byMonth(
       [
-        ...released.map((deal) => ({
-          at: deal.releasedAt as number,
+        ...funded.map((deal) => ({
+          at: deal.fundedAt as number,
           key: "advance" as const,
-          value: deal.target,
+          value: deal.terms?.exporterNet ?? 0,
         })),
-        ...done.map((deal) => ({
-          at: deal.settledAt as number,
-          key: "settlement" as const,
-          value: deal.waterfall?.exporter ?? 0,
-        })),
+        ...funded
+          .filter((deal) => rest(deal) > 0)
+          .map((deal) => ({
+            at: deal.closedAt ?? (deal.fundedAt as number),
+            key: "settlement" as const,
+            value: rest(deal),
+          })),
       ],
       ["advance", "settlement"],
     ),
@@ -98,16 +93,18 @@ export function exporterProfit(state: TradeState, exporterId: string) {
 export function importerPayments(state: TradeState, importerId: string) {
   const deals = state.deals.filter((deal) => deal.importerId === importerId)
   const paid = deals.filter(settled)
-  const due = deals.filter((deal) => deal.state === "Released")
+  const due = deals.filter(
+    (deal) => deal.state === "Funded" || deal.state === "Defaulted",
+  )
   return {
     deals,
     paid,
     due,
-    totalPaid: sum(paid.map((deal) => deal.amount)),
-    totalDue: sum(due.map((deal) => deal.amount)),
+    totalPaid: sum(deals.map((deal) => deal.paid)),
+    totalDue: sum(due.map((deal) => deal.amount - deal.paid)),
     monthly: byMonth(
       paid.map((deal) => ({
-        at: deal.settledAt as number,
+        at: deal.closedAt ?? deal.dueAt,
         key: "paid" as const,
         value: deal.amount,
       })),
@@ -117,20 +114,26 @@ export function importerPayments(state: TradeState, importerId: string) {
 }
 
 export function platformProfit(state: TradeState) {
-  const done = state.deals.filter(settled)
-  const payments = state.audit.filter((entry) => entry.kind === "payment")
-  const agentSpend = sum(payments.map((entry) => entry.amount ?? VERIFY_PRICE))
+  const funded = state.deals.filter(isFunded)
+  const checks = state.deals.reduce((total, deal) => total + deal.checks, 0)
+  const terms = (pick: (deal: Deal) => number) => sum(funded.map(pick))
   return {
-    done,
-    fees: sum(done.map((deal) => deal.waterfall?.fee ?? 0)),
-    volume: sum(state.deals.map(raised)),
-    agentSpend,
-    checks: payments.length,
+    funded,
+    done: state.deals.filter(settled),
+    fees: terms((deal) => deal.terms?.fee ?? 0),
+    platform: terms((deal) => deal.terms?.platformFee ?? 0),
+    reserve: terms((deal) => deal.terms?.reserveFee ?? 0),
+    agentFees: terms(
+      (deal) => (deal.terms?.agentFee ?? 0) + (deal.terms?.gasFee ?? 0),
+    ),
+    volume: terms((deal) => deal.terms?.advance ?? 0),
+    checks,
+    checkCost: Math.round(checks * VERIFY_PRICE * 100) / 100,
     monthly: byMonth(
-      done.map((deal) => ({
-        at: deal.settledAt as number,
+      funded.map((deal) => ({
+        at: deal.fundedAt as number,
         key: "fees" as const,
-        value: deal.waterfall?.fee ?? 0,
+        value: deal.terms?.platformFee ?? 0,
       })),
       ["fees"],
     ),

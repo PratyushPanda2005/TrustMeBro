@@ -18,9 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { getParty, raised } from "@/lib/trade/engine"
 import { amount, date, pct } from "@/lib/trade/format"
-import { useTrade } from "@/lib/trade/store"
+import { getParty, useTrade } from "@/lib/trade/store"
 import type { Deal, Role } from "@/lib/trade/types"
 
 import { PartyScore, StateBadge } from "./parts"
@@ -50,13 +49,13 @@ export function DealTable({
       ? [
           { head: "Goods", cell: (deal) => deal.goods },
           {
-            head: "Exporter Risk Score",
+            head: "Exporter Trust Score",
             cell: (deal) => (
               <PartyScore party={getParty(state, deal.exporterId)} />
             ),
           },
           {
-            head: "Importer Trust Score",
+            head: "Importer Risk Score",
             cell: (deal) => (
               <PartyScore party={getParty(state, deal.importerId)} />
             ),
@@ -67,9 +66,9 @@ export function DealTable({
             cell: (deal) => pct(deal.terms?.yieldBps ?? 0),
           },
           {
-            head: "Raised (USDT)",
+            head: "Advance (USDT)",
             right: true,
-            cell: (deal) => `${amount(raised(deal))} / ${amount(deal.target)}`,
+            cell: (deal) => amount(deal.terms?.advance ?? 0),
           },
         ]
       : [

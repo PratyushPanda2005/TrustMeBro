@@ -36,12 +36,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
-import { getParty } from "@/lib/trade/engine"
 import { pct, usdt } from "@/lib/trade/format"
 import { exporterProfit } from "@/lib/trade/profit"
-import { dealTerms, exporterScoreView, scoreBps } from "@/lib/trade/score"
-import { personas } from "@/lib/trade/seed"
-import { actions, useTrade } from "@/lib/trade/store"
+import { estimateTerms, exporterScoreView } from "@/lib/trade/score"
+import { actions, getParty, useTrade } from "@/lib/trade/store"
 
 import { MonthlyBars } from "../charts"
 import { DealTable } from "../deal-table"
@@ -49,16 +47,18 @@ import { PageHeader, StatCard, StatGrid } from "../parts"
 
 const useExporter = () => {
   const state = useTrade()
-  return { state, profit: exporterProfit(state, personas.exporter) }
+  return { state, profit: exporterProfit(state, state.personas.exporter) }
 }
 
 export function ExporterOverview() {
   const { state, profit } = useExporter()
-  const trust = scoreBps(getParty(state, personas.exporter).rep)
-  const risk = exporterScoreView(trust)
+  const exporter = getParty(state, state.personas.exporter)
+  const score = exporterScoreView(exporter.trustBps)
   const active = profit.deals.filter(
     (deal) =>
-      !["Settled", "Cancelled", "Disputed", "Expired"].includes(deal.state),
+      !["Settled", "Cancelled", "Rejected", "Mismatch", "Expired"].includes(
+        deal.state,
+      ),
   )
   return (
     <>
@@ -76,15 +76,15 @@ export function ExporterOverview() {
       </PageHeader>
       <StatGrid>
         <StatCard
-          label="Risk Score"
-          value={pct(risk.bps)}
-          hint={risk.band}
+          label="Trust Score"
+          value={pct(score.bps)}
+          hint={score.band}
           icon={Gauge}
         />
         <StatCard
           label="Next advance"
-          value={pct(dealTerms(trust, 5_000).advanceBps, 1)}
-          hint="At your current score"
+          value={pct(exporter.advanceBps)}
+          hint={`${usdt(exporter.availableCredit)} of credit left`}
           icon={HandCoins}
         />
         <StatCard
@@ -142,7 +142,7 @@ export function ExporterEarnings() {
         <StatCard
           label="Advances"
           value={usdt(profit.advances)}
-          hint="Released on a matched check"
+          hint="Paid when an investor funds"
         />
         <StatCard
           label="At settlement"
@@ -192,14 +192,20 @@ export function ExporterNewInvoice() {
   const set = (key: keyof typeof form) => (value: string) =>
     setForm((current) => ({ ...current, [key]: value }))
 
-  const trust = scoreBps(getParty(state, personas.exporter).rep)
-  const importerTrust = form.importerId
-    ? scoreBps(getParty(state, form.importerId).rep)
-    : 5_000
-  const terms = dealTerms(trust, importerTrust)
+  const exporter = getParty(state, state.personas.exporter)
+  const riskBps = form.importerId
+    ? getParty(state, form.importerId).riskBps
+    : 400
   const value = Number(form.amount) || 0
+  const terms = estimateTerms(value, exporter.trustBps, riskBps)
+  const overLimit = value > exporter.availableCredit
   const ready =
-    form.invoiceRef && form.goods && value > 0 && form.dueAt && form.importerId
+    form.invoiceRef &&
+    form.goods &&
+    value >= 10 &&
+    !overLimit &&
+    form.dueAt &&
+    form.importerId
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -209,7 +215,6 @@ export function ExporterNewInvoice() {
       goods: form.goods,
       amount: value,
       dueAt: Date.parse(`${form.dueAt}T09:00:00Z`),
-      exporterId: personas.exporter,
       importerId: form.importerId,
     })
     setBusy(false)
@@ -247,15 +252,20 @@ export function ExporterNewInvoice() {
                     onChange={(event) => set("goods")(event.target.value)}
                   />
                 </Field>
-                <Field>
+                <Field data-invalid={overLimit || undefined}>
                   <FieldLabel htmlFor="amount">Amount (USDT)</FieldLabel>
                   <Input
                     id="amount"
                     type="number"
-                    min="1"
+                    min="10"
                     value={form.amount}
+                    aria-invalid={overLimit}
                     onChange={(event) => set("amount")(event.target.value)}
                   />
+                  <FieldDescription>
+                    {usdt(exporter.availableCredit)} of your credit limit is
+                    free.
+                  </FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="due">Due date</FieldLabel>
@@ -301,17 +311,21 @@ export function ExporterNewInvoice() {
           <CardHeader>
             <CardTitle>Estimated terms</CardTitle>
             <CardDescription>
-              Fixed when the importer approves, from both scores.
+              Frozen when an investor funds, from both scores.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <p className="flex justify-between">
               <span className="text-muted-foreground">Advance</span>
-              {pct(terms.advanceBps, 1)}
+              {pct(terms.advanceBps)}
+            </p>
+            <p className="flex justify-between">
+              <span className="text-muted-foreground">Platform fee</span>
+              {usdt(terms.fee)}
             </p>
             <p className="flex justify-between">
               <span className="text-muted-foreground">You receive first</span>
-              {usdt((value * terms.advanceBps) / 10_000)}
+              {usdt(terms.exporterNet)}
             </p>
             <p className="flex justify-between">
               <span className="text-muted-foreground">Investor yield</span>

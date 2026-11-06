@@ -9,12 +9,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { getParty } from "@/lib/trade/engine"
 import { pct, usdt } from "@/lib/trade/format"
 import { importerPayments } from "@/lib/trade/profit"
-import { dealTerms, importerScoreView, scoreBps } from "@/lib/trade/score"
-import { personas } from "@/lib/trade/seed"
-import { useTrade } from "@/lib/trade/store"
+import { importerScoreView } from "@/lib/trade/score"
+import { getParty, useTrade } from "@/lib/trade/store"
 
 import { MonthlyBars } from "../charts"
 import { DealTable } from "../deal-table"
@@ -22,7 +20,7 @@ import { PageHeader, StatCard, StatGrid } from "../parts"
 
 const useImporter = () => {
   const state = useTrade()
-  const data = importerPayments(state, personas.importer)
+  const data = importerPayments(state, state.personas.importer)
   return {
     state,
     data,
@@ -32,8 +30,9 @@ const useImporter = () => {
 
 export function ImporterOverview() {
   const { state, data, approvals } = useImporter()
-  const trust = scoreBps(getParty(state, personas.importer).rep)
-  const view = importerScoreView(trust)
+  const view = importerScoreView(
+    getParty(state, state.personas.importer).riskBps,
+  )
   return (
     <>
       <PageHeader
@@ -42,7 +41,7 @@ export function ImporterOverview() {
       />
       <StatGrid>
         <StatCard
-          label="Trust Score"
+          label="Risk Score"
           value={pct(view.bps)}
           hint={view.band}
           icon={Gauge}
@@ -115,7 +114,7 @@ export function ImporterApprovals() {
 
 export function ImporterPayments() {
   const { state, data } = useImporter()
-  const trust = scoreBps(getParty(state, personas.importer).rep)
+  const importer = getParty(state, state.personas.importer)
   return (
     <>
       <PageHeader
@@ -127,8 +126,8 @@ export function ImporterPayments() {
         <StatCard label="Paid so far" value={usdt(data.totalPaid)} />
         <StatCard label="Invoices paid" value={data.paid.length} />
         <StatCard
-          label="Yield your score sets"
-          value={pct(dealTerms(5_000, trust).yieldBps)}
+          label="Risk Score"
+          value={pct(importer.riskBps)}
           hint="Lower means cheaper trade"
         />
       </StatGrid>

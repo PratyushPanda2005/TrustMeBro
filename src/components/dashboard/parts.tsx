@@ -69,14 +69,15 @@ const stateVariant: Record<
 > = {
   Created: "outline",
   Approved: "outline",
-  Funding: "secondary",
-  Funded: "secondary",
-  Shipped: "secondary",
-  Released: "default",
+  Claimed: "secondary",
+  Pending: "secondary",
+  Verified: "default",
+  Funded: "default",
   Settled: "default",
+  Mismatch: "outline",
   Cancelled: "outline",
   Expired: "outline",
-  Disputed: "destructive",
+  Rejected: "destructive",
   Defaulted: "destructive",
 }
 
@@ -94,7 +95,7 @@ export function ScoreBadge({ view }: { view: ScoreView }) {
   return <Badge variant={toneVariant[view.tone]}>{view.band}</Badge>
 }
 
-/** "Risk Score 20.00% Low risk" for an exporter, Trust Score for an importer. */
+/** "Trust Score 80.00% High" for an exporter, Risk Score for an importer. */
 export function PartyScore({ party }: { party: Party }) {
   const view = partyScoreView(party)
   return (
@@ -110,11 +111,14 @@ const explorers = {
   hedera: "https://hashscan.io/testnet/transaction/",
 }
 
-/**
- * Mock transactions don't exist on any chain, so this shows the hash as text.
- * Pass `live` once real hashes arrive to link to the explorer.
- */
-export function TxHash({ tx, live = false }: { tx: TxRef; live?: boolean }) {
+/** Local chain hashes have no public explorer, so only Hedera links by default. */
+export function TxHash({
+  tx,
+  live = tx.chain === "hedera",
+}: {
+  tx: TxRef
+  live?: boolean
+}) {
   const text = (
     <code className="font-mono text-xs text-muted-foreground">
       {shortHash(tx.hash)}

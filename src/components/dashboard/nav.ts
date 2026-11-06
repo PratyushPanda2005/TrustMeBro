@@ -7,7 +7,6 @@ import {
   Files,
   Gauge,
   LayoutDashboard,
-  ShieldCheck,
   Store,
   TrendingUp,
   UserCheck,
@@ -33,7 +32,7 @@ export const navigation: Record<Role, NavItem[]> = {
     { title: "Overview", href: `${base}/exporter`, icon: LayoutDashboard },
     { title: "New invoice", href: `${base}/exporter/new`, icon: FilePlus2 },
     { title: "My deals", href: `${base}/exporter/deals`, icon: Files },
-    { title: "Risk Score", href: `${base}/exporter/risk-score`, icon: Gauge },
+    { title: "Trust Score", href: `${base}/exporter/trust-score`, icon: Gauge },
     { title: "Earnings", href: `${base}/exporter/earnings`, icon: TrendingUp },
   ],
   importer: [
@@ -44,7 +43,7 @@ export const navigation: Record<Role, NavItem[]> = {
       icon: ClipboardCheck,
     },
     { title: "Payments", href: `${base}/importer/payments`, icon: Wallet },
-    { title: "Trust Score", href: `${base}/importer/trust-score`, icon: Gauge },
+    { title: "Risk Score", href: `${base}/importer/risk-score`, icon: Gauge },
   ],
   investor: [
     { title: "Overview", href: `${base}/investor`, icon: LayoutDashboard },
@@ -59,8 +58,7 @@ export const navigation: Record<Role, NavItem[]> = {
   admin: [
     { title: "Overview", href: `${base}/admin`, icon: LayoutDashboard },
     { title: "All deals", href: `${base}/admin/deals`, icon: Files },
-    { title: "Importers", href: `${base}/admin/importers`, icon: ShieldCheck },
-    { title: "Investors", href: `${base}/admin/investors`, icon: UserCheck },
+    { title: "Parties", href: `${base}/admin/parties`, icon: UserCheck },
     { title: "Agent", href: `${base}/admin/agent`, icon: Bot },
     {
       title: "Platform fees",

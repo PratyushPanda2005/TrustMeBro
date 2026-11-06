@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { Bot, Coins, Files, ShieldAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -12,14 +11,6 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import {
   Table,
   TableBody,
   TableCell,
@@ -29,9 +20,7 @@ import {
 } from "@/components/ui/table"
 import { amount, dateTime, pct, shortHash, usdt } from "@/lib/trade/format"
 import { platformProfit } from "@/lib/trade/profit"
-import { scoreBps } from "@/lib/trade/score"
 import { actions, useTrade } from "@/lib/trade/store"
-import type { SpendLimits } from "@/lib/trade/types"
 
 import { AuditTable } from "../audit-table"
 import { MonthlyBars } from "../charts"
@@ -42,7 +31,7 @@ export function AdminOverview() {
   const state = useTrade()
   const profit = platformProfit(state)
   const disputed = state.deals.filter((deal) =>
-    ["Disputed", "Defaulted"].includes(deal.state),
+    ["Rejected", "Defaulted"].includes(deal.state),
   )
   return (
     <>
@@ -63,14 +52,14 @@ export function AdminOverview() {
           icon={Coins}
         />
         <StatCard
-          label="Disputes and defaults"
+          label="Rejected and defaulted"
           value={disputed.length}
           icon={ShieldAlert}
         />
         <StatCard
           label="Waiting on a human"
           value={state.pending.length}
-          hint="Refused agent quotes"
+          hint="Payments over a limit"
           icon={Bot}
         />
       </StatGrid>
@@ -100,136 +89,47 @@ export function AdminDeals() {
   )
 }
 
-export function AdminImporters() {
+export function AdminParties() {
   const state = useTrade()
-  const [name, setName] = useState("")
-  const [code, setCode] = useState("80")
-  const value = Number(code)
-  const valid = name.trim() !== "" && value >= 1 && value <= 99
-  const importers = state.parties.filter((party) => party.role === "importer")
   return (
     <>
       <PageHeader
-        title="Importers"
-        description="An importer's fixed Trust Code becomes their starting score."
-      />
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Importer</TableHead>
-                  <TableHead>Wallet</TableHead>
-                  <TableHead className="text-right">Trust Code</TableHead>
-                  <TableHead>Trust Score</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {importers.map((party) => (
-                  <TableRow key={party.id}>
-                    <TableCell className="font-medium">{party.name}</TableCell>
-                    <TableCell>
-                      <code className="font-mono text-xs text-muted-foreground">
-                        {shortHash(party.wallet)}
-                      </code>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {pct(party.trustCodeBps ?? 0, 0)}
-                    </TableCell>
-                    <TableCell>
-                      <PartyScore party={party} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle>Onboard an importer</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="importer-name">Name</FieldLabel>
-                <Input
-                  id="importer-name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="trust-code">Trust Code (%)</FieldLabel>
-                <Input
-                  id="trust-code"
-                  type="number"
-                  min="1"
-                  max="99"
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
-                />
-                <FieldDescription>Fixed once onboarded.</FieldDescription>
-              </Field>
-              <div>
-                <Button
-                  disabled={!valid}
-                  onClick={async () => {
-                    const ok = await actions.onboardImporter(
-                      name.trim(),
-                      value * 100,
-                    )
-                    if (ok) setName("")
-                  }}
-                >
-                  Onboard
-                </Button>
-              </div>
-            </FieldGroup>
-          </CardContent>
-        </Card>
-      </div>
-    </>
-  )
-}
-
-export function AdminInvestors() {
-  const state = useTrade()
-  const investors = state.parties.filter((party) => party.role === "investor")
-  return (
-    <>
-      <PageHeader
-        title="Investors"
-        description="Only allowlisted wallets can buy or hold deal tokens."
+        title="Parties"
+        description="KYC allowlist: one address, one role. Scores change only through the formula."
       />
       <Card>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Investor</TableHead>
+                <TableHead>Party</TableHead>
+                <TableHead>Role</TableHead>
                 <TableHead>Wallet</TableHead>
-                <TableHead className="text-right">Allowlisted</TableHead>
+                <TableHead>Score</TableHead>
+                <TableHead className="text-right">Credit left (USDT)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {investors.map((party) => (
+              {state.parties.map((party) => (
                 <TableRow key={party.id}>
                   <TableCell className="font-medium">{party.name}</TableCell>
+                  <TableCell className="capitalize">{party.role}</TableCell>
                   <TableCell>
                     <code className="font-mono text-xs text-muted-foreground">
-                      {shortHash(party.wallet)}
+                      {shortHash(party.id)}
                     </code>
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Switch
-                      aria-label={`Allowlist ${party.name}`}
-                      checked={party.allowlisted ?? false}
-                      onCheckedChange={(checked) =>
-                        actions.setAllowlisted(party.id, checked)
-                      }
-                    />
+                  <TableCell>
+                    {party.role === "investor" ? (
+                      "-"
+                    ) : (
+                      <PartyScore party={party} />
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {party.role === "exporter"
+                      ? amount(party.availableCredit)
+                      : "-"}
                   </TableCell>
                 </TableRow>
               ))}
@@ -241,41 +141,12 @@ export function AdminInvestors() {
   )
 }
 
-function LimitsForm({ limits }: { limits: SpendLimits }) {
-  const [draft, setDraft] = useState(limits)
-  const fields: { key: keyof SpendLimits; label: string }[] = [
-    { key: "perCall", label: "Per call (USDC)" },
-    { key: "perDeal", label: "Per deal (USDC)" },
-    { key: "perDay", label: "Per day (USDC)" },
-  ]
-  return (
-    <FieldGroup>
-      {fields.map((field) => (
-        <Field key={field.key}>
-          <FieldLabel htmlFor={field.key}>{field.label}</FieldLabel>
-          <Input
-            id={field.key}
-            type="number"
-            min="0"
-            step="0.1"
-            value={draft[field.key]}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                [field.key]: Number(event.target.value),
-              }))
-            }
-          />
-        </Field>
-      ))}
-      <div>
-        <Button variant="outline" onClick={() => actions.setLimits(draft)}>
-          Save limits
-        </Button>
-      </div>
-    </FieldGroup>
-  )
-}
+const SPENDING_LIMITS = [
+  { label: "Per call", value: "1.00 USDC" },
+  { label: "Per deal", value: "1.00 USDC, 3 checks" },
+  { label: "Per day", value: "10.00 USDC" },
+  { label: "Per exporter", value: "5 checks a day" },
+]
 
 export function AdminAgent() {
   const state = useTrade()
@@ -287,19 +158,30 @@ export function AdminAgent() {
         description="The agent pays for checks and delivers them. The contract judges."
       />
       <StatGrid>
-        <StatCard label="Checks paid" value={profit.checks} />
+        <StatCard label="Checks relayed" value={profit.checks} />
         <StatCard
-          label="Agent spend"
-          value={`${profit.agentSpend.toFixed(2)} USDC`}
+          label="Cost of those checks"
+          value={`${profit.checkCost.toFixed(2)} USDC`}
+          hint="At 0.30 USDC each"
         />
         <StatCard label="Waiting on a human" value={state.pending.length} />
-        <StatCard label="Log entries" value={state.audit.length} />
+        <StatCard
+          label="Hedera agent"
+          value={state.agentOnline ? "Online" : "Offline"}
+          hint={
+            state.agentOnline
+              ? "Paying over x402"
+              : "Local stand-in is relaying checks"
+          }
+        />
       </StatGrid>
       {state.pending.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Human approval queue</CardTitle>
-            <CardDescription>Quotes the spending gate refused.</CardDescription>
+            <CardDescription>
+              Prices over the limits. Nothing is paid until you approve.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -307,7 +189,8 @@ export function AdminAgent() {
                 <TableRow>
                   <TableHead>Deal</TableHead>
                   <TableHead>Received</TableHead>
-                  <TableHead className="text-right">Quote (USDC)</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead className="text-right">Price (USDC)</TableHead>
                   <TableHead className="text-right">Decision</TableHead>
                 </TableRow>
               </TableHeader>
@@ -316,6 +199,9 @@ export function AdminAgent() {
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.dealId}</TableCell>
                     <TableCell>{dateTime(item.at)}</TableCell>
+                    <TableCell className="whitespace-normal">
+                      {item.reason}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {amount(item.price)}
                     </TableCell>
@@ -346,25 +232,54 @@ export function AdminAgent() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
-            <CardTitle>Audit log</CardTitle>
+            <CardTitle>Agent activity</CardTitle>
             <CardDescription>
-              Hash-chained, newest first. Writes to HCS at integration.
+              This chain&apos;s checks, hash-chained, newest first.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <AuditTable entries={state.audit} />
+            <AuditTable entries={state.audit.slice(0, 20)} />
           </CardContent>
         </Card>
         <Card className="h-fit">
           <CardHeader>
             <CardTitle>Spending limits</CardTitle>
-            <CardDescription>Checked before every payment.</CardDescription>
+            <CardDescription>
+              Set in the agent&apos;s configuration, and checked before every
+              payment.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <LimitsForm limits={state.limits} />
+            <dl className="flex flex-col gap-3 text-sm">
+              {SPENDING_LIMITS.map((limit) => (
+                <div key={limit.label} className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">{limit.label}</dt>
+                  <dd>{limit.value}</dd>
+                </div>
+              ))}
+            </dl>
           </CardContent>
         </Card>
       </div>
+      <Card className="min-w-0">
+        <CardHeader>
+          <CardTitle>Hedera audit topic</CardTitle>
+          <CardDescription>
+            Real payments from topic {state.hedera.topicId}, read live from the
+            mirror node. Their deal numbers come from past test runs, not this
+            chain.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {state.hedera.entries.length > 0 ? (
+            <AuditTable entries={state.hedera.entries} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              The mirror node didn&apos;t answer.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </>
   )
 }
@@ -372,49 +287,50 @@ export function AdminAgent() {
 export function AdminFees() {
   const state = useTrade()
   const profit = platformProfit(state)
-  const net = profit.fees - profit.agentSpend
   return (
     <>
       <PageHeader
         title="Platform fees"
-        description="What the platform earns, less what the agent spends on checks."
+        description="1% of each advance, split by the contract at funding."
       />
       <StatGrid>
         <StatCard
-          label="Fees earned"
+          label="Fees taken"
           value={usdt(profit.fees)}
-          hint="0.5% of settled invoices"
+          hint={`${profit.funded.length} funded deals`}
         />
         <StatCard
-          label="Agent spend"
-          value={`${profit.agentSpend.toFixed(2)} USDC`}
-          hint={`${profit.checks} checks`}
+          label="Platform profit"
+          value={usdt(profit.platform)}
+          hint="What's left after the split"
         />
         <StatCard
-          label="Net"
-          value={`${net.toFixed(2)} USD`}
-          hint="1 USDT = 1 USDC assumed"
+          label="Reserve fund"
+          value={usdt(profit.reserve)}
+          hint="20% after agent and gas"
         />
-        <StatCard label="Settled invoices" value={profit.done.length} />
+        <StatCard
+          label="Agent and gas"
+          value={usdt(profit.agentFees)}
+          hint="1.50 USDT per deal"
+        />
       </StatGrid>
       <Card>
         <CardHeader>
-          <CardTitle>Fees by month</CardTitle>
-          <CardDescription>USDT, by settlement date</CardDescription>
+          <CardTitle>Platform profit by month</CardTitle>
+          <CardDescription>USDT, by funding date</CardDescription>
         </CardHeader>
         <CardContent>
           <MonthlyBars
             data={profit.monthly}
-            series={[{ key: "fees", label: "Fees" }]}
+            series={[{ key: "fees", label: "Profit" }]}
           />
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
           <CardTitle>Parties</CardTitle>
-          <CardDescription>
-            Scores as the contract would hold them
-          </CardDescription>
+          <CardDescription>Trust as the contract holds it</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -433,7 +349,7 @@ export function AdminFees() {
                     <TableCell className="font-medium">{party.name}</TableCell>
                     <TableCell className="capitalize">{party.role}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {pct(scoreBps(party.rep))}
+                      {pct(party.trustBps)}
                     </TableCell>
                   </TableRow>
                 ))}
