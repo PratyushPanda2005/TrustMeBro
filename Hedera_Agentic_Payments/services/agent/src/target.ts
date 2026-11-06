@@ -11,6 +11,7 @@ import { createPublicClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { tradeDealsAgentAbi, bytes32ToDealId, dealIdToBytes32, WHITECHAIN_CHAIN_ID, WHITECHAIN_RPC } from "@tmb/shared";
 import type { ClaimedEvent } from "./chain.ts";
+import { contractScope } from "./ledger.ts";
 import { need, tradeDealsOrPlaceholder } from "./config.ts";
 
 export interface ChainTarget {
@@ -44,7 +45,7 @@ export function chainTarget(env: NodeJS.ProcessEnv = process.env): ChainTarget {
       chainId: dep.chainId,
       rpcUrl: dep.rpcUrl,
       tradeDeals: dep.tradeDeals,
-      expectedSigner: dep.wallets.verifier.address,
+      expectedSigner: (env.VERIFIER_ADDRESS as Hex | undefined) ?? dep.wallets.verifier.address,
       relayerKey: dep.wallets.agent.privateKey,
     };
   }
@@ -57,6 +58,24 @@ export function chainTarget(env: NodeJS.ProcessEnv = process.env): ChainTarget {
     expectedSigner: privateKeyToAccount(verifierKey as Hex).address,
     relayerKey: env.RELAYER_PRIVATE_KEY as Hex | undefined,
   };
+}
+
+/**
+ * Which deployment a deal id belongs to, for the spending ledger. On Whitechain a redeploy gets a new
+ * address. Lane C's anvil redeploys at the SAME address on every restart, so deal 1 would look already
+ * paid; there the genesis block hash (new on every anvil start) tells the instances apart.
+ */
+export async function deploymentScope(t: ChainTarget): Promise<string> {
+  const base = contractScope(t.chainId, t.tradeDeals);
+  if (t.kind !== "local") return base;
+  const genesis = await createPublicClient({ transport: http(t.rpcUrl) }).getBlock({ blockNumber: 0n });
+  return `${base}@${genesis.hash.slice(0, 18)}`;
+}
+
+/** TradeDeals.verifier(): the only signer whose answers the contract accepts. */
+export async function readVerifier(t: ChainTarget): Promise<Hex> {
+  const pub = createPublicClient({ transport: http(t.rpcUrl) });
+  return pub.readContract({ address: t.tradeDeals, abi: tradeDealsAgentAbi, functionName: "verifier" }) as Promise<Hex>;
 }
 
 /** A deal's claim as the agent would get it from the Claimed event, read back from TradeDeals. */

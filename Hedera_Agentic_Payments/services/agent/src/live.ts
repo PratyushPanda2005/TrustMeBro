@@ -12,11 +12,12 @@ import { chainTarget, type ChainTarget } from "./target.ts";
 
 export const verifierBase = () => process.env.VERIFIER_URL ?? "http://localhost:4021";
 
-export function liveBuyDeps(audit: (e: AuditEvent) => Promise<void>, target: ChainTarget = chainTarget()): BuyDeps {
+export function liveBuyDeps(audit: (e: AuditEvent) => Promise<void>, target: ChainTarget = chainTarget(), scope?: string): BuyDeps {
   return {
     url: verifierBase() + "/verify",
     tradeDeals: target.tradeDeals,
     chainId: target.chainId,
+    scope,
     policy: loadPolicy(),
     ledger: new SpendLedger(join(process.cwd(), ".state", "ledger.json")),
     now: Date.now,
