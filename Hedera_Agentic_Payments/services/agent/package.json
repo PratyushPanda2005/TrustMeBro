@@ -7,7 +7,8 @@
     "start": "tsx src/main.ts",
     "once": "tsx src/once.ts",
     "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "e2e": "tsx src/e2e.ts"
   },
   "dependencies": {
     "@tmb/audit": "workspace:*",

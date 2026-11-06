@@ -5,7 +5,9 @@
   "description": "TrustMeBro: trade finance where investors replace the bank and honesty sets the price (ETHGlobal Mumbai 2026: Whitechain Tokenize + Hedera x402)",
   "type": "module",
   "packageManager": "pnpm@10.7.0",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "pnpm -r --if-present test",
     "test:unit": "tsx --test packages/shared/test/*.test.ts services/agent/test/*.test.ts services/audit/test/*.test.ts services/verifier/test/*.test.ts",
@@ -14,7 +16,9 @@
     "verifier": "pnpm --filter @tmb/verifier start",
     "agent:once": "pnpm --filter @tmb/agent once",
     "agent": "pnpm --filter @tmb/agent start",
-    "associate-usdc": "pnpm --filter @tmb/audit associate-usdc"
+    "associate-usdc": "pnpm --filter @tmb/audit associate-usdc",
+    "e2e": "pnpm --filter @tmb/agent e2e",
+    "audit:verify": "pnpm --filter @tmb/audit verify"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
