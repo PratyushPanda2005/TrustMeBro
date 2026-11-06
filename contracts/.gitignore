@@ -1,0 +1,14 @@
+# Foundry build output
+/out/
+/cache/
+
+# npm dependencies (OpenZeppelin, forge-std)
+/node_modules/
+
+# local anvil runs and dry runs; testnet (1874) broadcasts are kept as deploy proof
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# secrets
+.env
+!.env.example

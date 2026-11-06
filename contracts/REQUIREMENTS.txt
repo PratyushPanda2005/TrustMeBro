@@ -1,0 +1,65 @@
+TrustMeBro contracts: requirements and setup
+=============================================
+
+1. INSTALL (once per computer)
+-------------------------------
+Git + Git Bash      https://git-scm.com              (Windows: use Git Bash for all commands below)
+Node.js 20 or newer https://nodejs.org               (comes with npm)
+Foundry             forge, cast, anvil               (compiler, test runner, deploy tool)
+
+  Install Foundry in Git Bash:
+    curl -L https://foundry.paradigm.xyz | bash
+    (close and reopen Git Bash)
+    foundryup
+    forge --version        <- should print a version
+
+The Solidity compiler (solc 0.8.30) is downloaded by Foundry automatically on the first build.
+
+
+2. LIBRARIES (installed by npm, no manual download)
+------------------------------------------------------
+contracts/package.json:
+  @openzeppelin/contracts   5.4.0     standard ERC-721, ERC-20 helpers, signatures, access control
+  forge-std                 1.9.7     test helpers
+
+packages/shared/package.json (only needed for the signature fixture):
+  viem, tsx, typescript
+
+
+3. BUILD AND TEST (no wallet needed, nothing goes on chain)
+-------------------------------------------------------------
+  cd contracts
+  npm install                 downloads the libraries into contracts/node_modules
+  forge build --sizes         compiles; shows each contract's size (must be under 24,576 bytes)
+  forge test -vv              runs all tests; every test should say [PASS]
+
+What you get:
+  contracts/out/              compiled contracts (bytecode + ABI). Not committed.
+  A PASS/FAIL line per test.  All PASS = contracts behave exactly as the plan says.
+
+Optional, signature check between TypeScript and Solidity:
+  cd packages/shared && npm install && npm run fixture
+  cd ../../contracts && forge test --match-contract Eip712RoundTrip -vv
+
+
+4. DEPLOY (later, when the wallet is ready)
+----------------------------------------------
+Needed:
+  - Deployer wallet with some WBT for gas (faucet: https://faucet.testnet.whitechain.io)
+  - VERIFIER_ADDRESS: the signing address of the verifier service (from the backend teammate)
+  - Demo wallets: exporter, importer, investor (each needs a little WBT;
+    importer and investor also need USDT 0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7)
+
+Steps:
+  cd contracts
+  cp .env.example .env                         then fill VERIFIER_ADDRESS
+  cast wallet import deployer --interactive    paste the deployer private key once (stored encrypted)
+  cast chain-id --rpc-url whitechain_sepolia   must print 1874
+  forge script script/Deploy.s.sol --rpc-url whitechain_sepolia --account deployer
+                                               dry run: shows what would happen, sends nothing
+  forge script script/Deploy.s.sol --rpc-url whitechain_sepolia --account deployer --broadcast \
+    --verify --verifier blockscout --verifier-url https://explorer.testnet.whitechain.io/api/
+                                               real deploy + verify on the explorer
+  node script/export.mjs                       copies addresses + ABIs to packages/shared
+  forge script script/Kyc.s.sol --rpc-url whitechain_sepolia --account deployer --broadcast
+                                               KYCs the demo wallets (set them in .env first)

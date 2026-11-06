@@ -1,0 +1,27 @@
+{
+  "name": "@tmb/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "once": "tsx src/once.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "e2e": "tsx src/e2e.ts",
+    "e2e:local": "tsx src/e2e-local.ts"
+  },
+  "dependencies": {
+    "@tmb/audit": "workspace:*",
+    "@tmb/shared": "workspace:*",
+    "@x402/core": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "@x402/hedera": "2.30.0",
+    "dotenv": "^16.4.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

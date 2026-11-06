@@ -1,0 +1,29 @@
+{
+  "name": "@tmb/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sign": "./src/sign.ts",
+    "./vectors/trust.json": "./vectors/trust.json",
+    "./env": "./src/env.ts"
+  },
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "vectors": "tsx scripts/gen-vectors.ts",
+    "fixtures": "tsx scripts/gen-fixtures.ts"
+  },
+  "dependencies": {
+    "viem": "^2.21.0",
+    "zod": "^3.25.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
