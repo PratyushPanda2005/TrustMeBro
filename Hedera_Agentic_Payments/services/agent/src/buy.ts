@@ -1,5 +1,5 @@
 /**
- * Buy one shipment verification over x402 with guardrails:
+ * Buy one shipment check over x402 with guardrails (plan v5 §8–9):
  *   1. unpaid probe → read the 402 quote (discovery: price, asset, payTo, Bazaar schema)
  *   2. deterministic spending gate (policy.ts); pending/deny → stop, nothing signed
  *   3. paid request (x402 client re-sends the same POST body with PAYMENT-SIGNATURE)
@@ -8,20 +8,25 @@
  */
 import { VerifyResponse, type VerifyRequest, HEDERA_USDC_TESTNET } from "@tmb/shared";
 import { evaluate, type Policy } from "./policy.ts";
-import type { SpendLedger, Stage } from "./ledger.ts";
+import type { SpendLedger } from "./ledger.ts";
 import { parsePaymentRequired, parseSettlement, type PinnedPayment, type Settlement } from "./x402.ts";
 
 export interface AuditEvent {
-  kind: "quote" | "paid" | "refused" | "pending_human" | "approved" | "relayed" | "skipped" | "error";
+  kind: "quote" | "paid" | "refused" | "pending_human" | "approved" | "relayed" | "recheck" | "skipped" | "error";
   dealId?: string;
   reason: string;
-  payment?: { payTo: string; amount: string; asset: string; hederaTxId?: string };
+  payment?: { payTo: string; amount: string; asset: string; hederaTxId?: string; payer?: string };
   whitechainTx?: string;
-  verificationHash?: string;
+  /** keccak256(signature): links this Hedera payment to VerificationSubmitted on Whitechain (plan v5 §8, Option A). */
+  sigHash?: string;
+  /** What the contract decided on relay and the exporter's score before/after (plan v5 §4, §5.2). */
+  trust?: { exporter: string; outcome: "verified" | "pending" | "rejected" | "mismatch"; beforeBps: number; afterBps: number };
 }
 
 export interface BuyDeps {
   url: string;
+  /** Our TradeDeals: the response must be signed for it (EIP-712 verifyingContract). */
+  tradeDeals: string;
   policy: Policy;
   ledger: SpendLedger;
   now: () => number;
@@ -34,10 +39,16 @@ export interface BuyDeps {
 }
 
 export type BuyResult =
-  | { status: "verified"; response: VerifyResponse; settlement: Settlement }
+  | { status: "verified"; response: VerifyResponse; settlement: Settlement; payment: { payTo: string; amount: string; asset: string } }
   | { status: "refused" | "pending_human" | "no_verdict" | "untrusted"; reason: string; settlement?: Settlement; approvalId?: string };
 
-export async function buyVerification(req: VerifyRequest, stage: Stage, d: BuyDeps): Promise<BuyResult> {
+/** Which paid check of the deal this is (1, then 2–3 while Pending) and whose deal it is (per-exporter cap). */
+export interface CheckContext {
+  checkNo: number;
+  exporter: string;
+}
+
+export async function buyVerification(req: VerifyRequest, ctx: CheckContext, d: BuyDeps): Promise<BuyResult> {
   const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) };
 
   // 1. Probe for the price (unpaid; a 402 is free).
@@ -56,9 +67,9 @@ export async function buyVerification(req: VerifyRequest, stage: Stage, d: BuyDe
   await d.audit({ kind: "quote", dealId: req.dealId, reason: `quoted ${payment.amount} of ${quote.asset}${quote.hasBazaar ? " (bazaar)" : ""}`, payment });
 
   // 2. Spending gate.
-  const decision = evaluate({ dealId: req.dealId, stage, network: quote.network, asset: quote.asset, payTo: quote.payTo, amount: quote.amount }, d.policy, d.ledger, d.now());
+  const decision = evaluate({ dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, network: quote.network, asset: quote.asset, payTo: quote.payTo, amount: quote.amount }, d.policy, d.ledger, d.now());
   if (decision.decision === "pending_human") {
-    const approvalId = d.ledger.requestApproval({ dealId: req.dealId, stage, payTo: quote.payTo, amount: quote.amount, reason: decision.reason, at: d.now() });
+    const approvalId = d.ledger.requestApproval({ dealId: req.dealId, checkNo: ctx.checkNo, payTo: quote.payTo, amount: quote.amount, reason: decision.reason, at: d.now() });
     await d.audit({ kind: "pending_human", dealId: req.dealId, reason: decision.reason, payment });
     return { status: "pending_human", reason: decision.reason, approvalId };
   }
@@ -92,8 +103,8 @@ export async function buyVerification(req: VerifyRequest, stage: Stage, d: BuyDe
   }
   const settleHeader = paid.headers.get("PAYMENT-RESPONSE");
   const settlement: Settlement = settleHeader ? parseSettlement(settleHeader) : { success: false, error: "missing PAYMENT-RESPONSE" };
-  d.ledger.recordPayment({ dealId: req.dealId, stage, payTo: quote.payTo, amount: quote.amount, at: d.now(), hederaTxId: settlement.txId });
-  await d.audit({ kind: "paid", dealId: req.dealId, reason: settlement.success ? "settled on Hedera" : `settlement unclear: ${settlement.error}`, payment: { ...payment, hederaTxId: settlement.txId } });
+  d.ledger.recordPayment({ dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, payTo: quote.payTo, amount: quote.amount, at: d.now(), hederaTxId: settlement.txId });
+  await d.audit({ kind: "paid", dealId: req.dealId, reason: settlement.success ? "settled on Hedera" : `settlement unclear: ${settlement.error}`, payment: { ...payment, hederaTxId: settlement.txId, payer: settlement.payer } });
 
   // 4. Trust nothing: schema, binding to this deal/contract, signer.
   const parsed = VerifyResponse.safeParse(await paid.json());
@@ -102,14 +113,14 @@ export async function buyVerification(req: VerifyRequest, stage: Stage, d: BuyDe
     return { status: "untrusted", reason: "malformed response", settlement };
   }
   const r = parsed.data;
-  const bound = r.verification.dealId.toLowerCase() === req.dealId.toLowerCase() && r.verifyingContract.toLowerCase() === req.tradeDeals.toLowerCase();
+  const bound = r.verification.dealId.toLowerCase() === req.dealId.toLowerCase() && r.verifyingContract.toLowerCase() === d.tradeDeals.toLowerCase();
   const signer = (await d.recoverSigner(r)).toLowerCase();
   if (!bound || signer !== d.expectedSigner.toLowerCase()) {
     const reason = !bound ? "response bound to another deal/contract" : `signed by ${signer}, expected verifier ${d.expectedSigner}`;
     await d.audit({ kind: "error", dealId: req.dealId, reason });
     return { status: "untrusted", reason, settlement };
   }
-  return { status: "verified", response: r, settlement };
+  return { status: "verified", response: r, settlement, payment };
 }
 
 export const DEFAULT_ASSET = HEDERA_USDC_TESTNET;
