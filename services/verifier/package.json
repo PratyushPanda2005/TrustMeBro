@@ -5,14 +5,22 @@
   "description": "TrustMeBro x402 verification API: paid POST /verify on Hedera, EIP-712 signed shipment observations for Whitechain",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/v2-main.ts",
+    "dev": "tsx watch src/v2-main.ts",
     "local": "tsx scripts/local.ts",
-    "stack": "tsx scripts/stack.ts",
     "claim": "tsx scripts/claim.ts",
     "e2e": "tsx scripts/e2e.ts",
     "test": "node --import tsx --test test/scenarios.test.ts test/server.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "start:v2": "tsx src/v2-main.ts",
+    "test:v2": "tsx --test test/v2.test.ts test/v2-startup.test.ts test/v2-setup-config.test.ts test/metamask.test.ts",
+    "start:legacy": "tsx src/index.ts",
+    "check:v2": "tsx scripts/check-v2.ts",
+    "dev:legacy": "tsx watch src/index.ts",
+    "diagnose:v2": "tsx src/v2-main.ts --diagnose",
+    "setup:v2-demo": "tsx scripts/setup-v2-demo.ts",
+    "prepare:metamask": "tsx scripts/prepare-metamask.ts",
+    "stack": "tsx scripts/stack.ts"
   },
   "dependencies": {
     "@trustmebro/shared": "file:../../packages/shared",

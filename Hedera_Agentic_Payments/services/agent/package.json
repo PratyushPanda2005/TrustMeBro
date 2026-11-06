@@ -1,27 +1,35 @@
 {
-  "name": "@tmb/agent",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "start": "tsx src/main.ts",
-    "once": "tsx src/once.ts",
-    "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc -p tsconfig.json",
-    "e2e": "tsx src/e2e.ts",
-    "e2e:local": "tsx src/e2e-local.ts"
-  },
-  "dependencies": {
-    "@tmb/audit": "workspace:*",
-    "@tmb/shared": "workspace:*",
-    "@x402/core": "2.30.0",
-    "@x402/fetch": "2.30.0",
-    "@x402/hedera": "2.30.0",
-    "dotenv": "^16.4.0",
-    "viem": "^2.21.0"
-  },
-  "devDependencies": {
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
-  }
+    "name":  "@tmb/agent",
+    "version":  "0.1.0",
+    "private":  true,
+    "type":  "module",
+    "scripts":  {
+                    "start":  "tsx src/v2-main.ts",
+                    "once":  "tsx src/v2-main.ts --once",
+                    "test":  "tsx --test test/*.test.ts",
+                    "typecheck":  "tsc -p tsconfig.json",
+                    "e2e":  "tsx src/e2e.ts",
+                    "e2e:local":  "tsx src/e2e-local.ts",
+                    "start:v2":  "tsx src/v2-main.ts",
+                    "test:v2":  "tsx --test test/v2.test.ts test/v2-evm.test.ts test/v2-payment.test.ts test/v2-startup.test.ts test/v2-demo-recovery.test.ts",
+                    "start:legacy":  "tsx src/main.ts",
+                    "once:legacy":  "tsx src/once.ts",
+                    "diagnose:v2":  "tsx src/v2-main.ts --diagnose",
+                    "metamask:v2":  "tsx src/v2-manual.ts",
+                    "recover:demo:v2":  "tsx src/v2-recover-demo.ts"
+                },
+    "dependencies":  {
+                         "@tmb/audit":  "workspace:*",
+                         "@tmb/shared":  "workspace:*",
+                         "@x402/core":  "2.30.0",
+                         "@x402/fetch":  "2.30.0",
+                         "@x402/hedera":  "2.30.0",
+                         "dotenv":  "^16.4.0",
+                         "viem":  "^2.21.0",
+                         "@trustmebro/shared":  "link:../../../packages/shared"
+                     },
+    "devDependencies":  {
+                            "tsx":  "^4.19.0",
+                            "typescript":  "^5.6.0"
+                        }
 }

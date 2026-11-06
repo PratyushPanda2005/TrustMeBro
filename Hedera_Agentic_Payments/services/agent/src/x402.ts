@@ -73,7 +73,7 @@ export function parseSettlement(headerB64: string): Settlement {
   const s = decode(headerB64);
   const txId = s.transaction ?? s.transactionId;
   return {
-    success: Boolean(s.success),
+    success: s.success === true,
     txId,
     hashscan: txId ? hashscanTx(txId) : undefined,
     payer: s.payer,

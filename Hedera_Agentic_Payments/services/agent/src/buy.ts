@@ -112,6 +112,10 @@ export async function buyVerification(req: VerifyRequest, ctx: CheckContext, d: 
   d.ledger.recordPayment({ contract, dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, payTo: quote.payTo, amount: quote.amount, at: d.now(), hederaTxId: settlement.txId });
   await d.audit({ kind: "paid", dealId: req.dealId, reason: settlement.success ? "settled on Hedera" : `settlement unclear: ${settlement.error}`, payment: { ...payment, hederaTxId: settlement.txId, payer: settlement.payer } });
 
+  if (!settlement.success || !settlement.txId || !settlement.payer) {
+    return { status: "no_verdict", reason: "payment settlement failed or uncertain; reconcile before retry", settlement };
+  }
+
   // 4. Trust nothing: schema, binding to this deal / chain / contract, sigHash, signer.
   // The verifier's `expected` verdict is ignored: the contract decides.
   const parsed = VerifyResponse.safeParse(await paid.json());
