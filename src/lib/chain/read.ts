@@ -85,6 +85,9 @@ function describe({ eventName, args }: Log) {
   return undefined
 }
 
+const blockTimes = new Map<bigint, number>()
+let blockTip = 0n
+
 export async function readState(): Promise<TradeState> {
   const deployment = loadDeployment()
   const client = publicClient(deployment)
@@ -94,23 +97,29 @@ export async function readState(): Promise<TradeState> {
     abi: trustRegistryAbi,
   } as const
 
+  const fromBlock = BigInt(process.env.FROM_BLOCK ?? 0)
+
   const [count, tradeLogs, registryLogs, approvals, hedera] = await Promise.all(
     [
       client.readContract({ ...deals, functionName: "dealCount" }),
-      client.getContractEvents({ ...deals, fromBlock: 0n }),
-      client.getContractEvents({ ...registry, fromBlock: 0n }),
+      client.getContractEvents({ ...deals, fromBlock }),
+      client.getContractEvents({ ...registry, fromBlock }),
       readApprovals(),
       readHederaAudit(),
     ],
   )
 
-  const blocks = new Map<bigint, number>()
+  // Block times never change, so each is fetched once. A restarted local chain
+  // reuses block numbers, which shows up as logs ending before the known tip.
+  const tip = tradeLogs.at(-1)?.blockNumber ?? 0n
+  if (tip < blockTip) blockTimes.clear()
+  blockTip = tip
   const timeOf = async (blockNumber: bigint) => {
-    if (!blocks.has(blockNumber)) {
+    if (!blockTimes.has(blockNumber)) {
       const block = await client.getBlock({ blockNumber })
-      blocks.set(blockNumber, ms(block.timestamp))
+      blockTimes.set(blockNumber, ms(block.timestamp))
     }
-    return blocks.get(blockNumber) as number
+    return blockTimes.get(blockNumber) as number
   }
 
   const logs = tradeLogs as unknown as Log[]

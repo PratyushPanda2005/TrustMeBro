@@ -104,7 +104,8 @@ for (let i = 0; i < 100; i++) {
 }
 
 mkdirSync(dataDir, { recursive: true })
-const agent = startLocalAgent(dep, verifierUrl, join(dataDir, "agent-log.json"))
+// LOCAL_AGENT=off hands the relaying to the real Hedera agent (CHAIN_ADAPTER=local pnpm agent).
+const agent = process.env.LOCAL_AGENT === "off" ? undefined : startLocalAgent(dep, verifierUrl, join(dataDir, "agent-log.json"))
 
 const meta: Record<string, { goods: string; invoiceRef: string }> = {}
 const saveMeta = () => writeFileSync(join(dataDir, "deal-meta.json"), JSON.stringify(meta, null, 2))
@@ -190,12 +191,12 @@ TrustMeBro backend ready
   Chain      ${dep.rpcUrl} (${dep.chainId})
   TradeDeals ${dep.tradeDeals}
   Verifier   ${verifierUrl}
-  Agent      local stand-in, no Hedera payments
+  Agent      ${agent ? "local stand-in, no Hedera payments" : "off, run the Hedera agent"}
   Deals      ${Object.keys(meta).length} seeded. Press Ctrl+C to stop; restarting wipes the chain.
 `)
 
 const stop = () => {
-  agent.stop()
+  agent?.stop()
   anvil.stop()
   process.exit(0)
 }

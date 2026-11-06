@@ -11,10 +11,51 @@ npm run dev
 
 Then open [http://localhost:3000](http://localhost:3000).
 
+## Running the full product
+
+The dashboards read live contract state, so they need the backend:
+
+```bash
+npm install
+(cd contracts && npm install && npx forge build)
+(cd services/verifier && npm install)
+
+npm run stack    # local chain, contracts, verifier, agent stand-in and seeded deals
+npm run dev      # in a second terminal
+```
+
+`npm run stack` wipes the chain each time it starts. It signs with public test keys, on the local chain only.
+
+### Using the real agent
+
+The stand-in relays checks without paying. To run the Hedera agent instead, fill in `Hedera_Agentic_Payments/.env`, then:
+
+```bash
+PAYMENTS=on VERIFIER_PAYTO=0.0.x LOCAL_AGENT=off npm run stack
+cd Hedera_Agentic_Payments && CHAIN_ADAPTER=local pnpm agent
+```
+
+### Moving to Whitechain
+
+Deploy the contracts, then set these for the dashboard:
+
+```bash
+CHAIN=whitechain
+TRADEDEALS_ADDRESS=0x...
+REGISTRY_ADDRESS=0x...
+USDT_ADDRESS=0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7
+VERIFIER_URL=https://...
+PARTIES='{"0x...":{"name":"Ravi Exports","role":"exporter"}}'
+PERSONAS='{"exporter":"0x...","importer":"0x...","investor":"0x..."}'
+```
+
+Reads work straight away. Writes need wallet signing, which is the remaining step: on a real network the dashboard shows a "connect a wallet" notice instead of acting.
+
 ## Scripts
 
 | Command             | What it does         |
 | ------------------- | -------------------- |
+| `npm run stack`     | Start the backend    |
 | `npm run dev`       | Start the dev server |
 | `npm run build`     | Build for production |
 | `npm run start`     | Serve the build      |
