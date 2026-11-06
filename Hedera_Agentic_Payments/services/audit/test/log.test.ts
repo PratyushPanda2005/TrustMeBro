@@ -42,7 +42,7 @@ test("a failed HCS submit is resent before the next message, so the topic chain 
     assert.equal(sent.length, 0);
     await log.write({ kind: "paid", reason: "b" });
     assert.deepEqual(sent.map((m) => m.seq), [0, 1]);
-    assert.deepEqual(verifyChain(sent), { ok: true });
+    assert.deepEqual(verifyChain(sent), { ok: true, duplicates: 0 });
     assert.equal(log.pending(), 0);
   } finally {
     restore();
@@ -61,7 +61,7 @@ test("unsent messages survive a restart and go out first", async () => {
     assert.equal(restarted.pending(), 1);
     await restarted.write({ kind: "paid", reason: "after restart" });
     assert.deepEqual(sent.map((m) => [m.seq, m.reason]), [[0, "before crash"], [1, "after restart"]]);
-    assert.deepEqual(verifyChain(sent), { ok: true });
+    assert.deepEqual(verifyChain(sent), { ok: true, duplicates: 0 });
   } finally {
     restore();
     rmSync(dir, { recursive: true, force: true });
@@ -74,7 +74,7 @@ test("concurrent writes reach HCS in seq order", async () => {
   const log = new AuditLog(sink);
   await Promise.all([1, 2, 3, 4].map((i) => log.write({ kind: "quote", reason: `deal ${i}` })));
   assert.deepEqual(sent.map((m) => m.seq), [0, 1, 2, 3]);
-  assert.deepEqual(verifyChain(sent), { ok: true });
+  assert.deepEqual(verifyChain(sent), { ok: true, duplicates: 0 });
 });
 
 test("each topic keeps its own chain tail, so switching AUDIT_TOPIC_ID starts the new topic at seq 0", async () => {
@@ -103,4 +103,18 @@ test("close() waits for queued submits, then closes the sink's client so a scrip
   assert.equal(sent.length, 1, "message submitted before close");
   assert.equal(closed, true);
   await pending;
+});
+
+test("an exact resend (same seq and hash, e.g. after DUPLICATE_TRANSACTION) is skipped and counted; a different message at that seq still breaks", async () => {
+  const { verifyChain } = await import("../src/chain.ts");
+  const sent: any[] = [];
+  const log = new AuditLog({ submit: async (m: any) => { sent.push(m); return {}; } } as any);
+  for (const k of ["quote", "paid", "relayed"] as const) await log.write({ kind: k, reason: k });
+  const resent = [sent[0], sent[1], sent[1], sent[2]];
+  const r = verifyChain(resent);
+  assert.equal(r.ok, true);
+  assert.equal((r as any).duplicates, 1);
+  const forged = { ...sent[1], reason: "edited" };
+  assert.equal(verifyChain([sent[0], sent[1], forged, sent[2]]).ok, false);
+  assert.equal(verifyChain([sent[0], sent[2]]).ok, false); // gap
 });

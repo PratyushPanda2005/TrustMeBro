@@ -18,7 +18,7 @@ test("messages are numbered and each one commits to the previous hash", () => {
 test("an untouched chain verifies", () => {
   const c = new AuditChain(clock);
   const msgs = [c.next({ kind: "quote", reason: "a" }), c.next({ kind: "paid", reason: "b" }), c.next({ kind: "relayed", reason: "c" })];
-  assert.deepEqual(verifyChain(msgs), { ok: true });
+  assert.deepEqual(verifyChain(msgs), { ok: true, duplicates: 0 });
 });
 
 test("editing any past message is detected at that message", () => {
@@ -43,7 +43,7 @@ test("messages fit in one HCS chunk (≤ 1024 bytes); long reasons are trimmed",
   const c = new AuditChain(clock);
   const m = c.next({ kind: "error", reason: "x".repeat(5000) });
   assert.ok(Buffer.byteLength(JSON.stringify(m)) <= 1024);
-  assert.deepEqual(verifyChain([m]), { ok: true });
+  assert.deepEqual(verifyChain([m]), { ok: true, duplicates: 0 });
 });
 
 test("resuming from the last message continues the chain", () => {
@@ -51,7 +51,7 @@ test("resuming from the last message continues the chain", () => {
   const m0 = c.next({ kind: "quote", reason: "a" });
   const resumed = new AuditChain(clock, m0);
   const m1 = resumed.next({ kind: "paid", reason: "b" });
-  assert.deepEqual(verifyChain([m0, m1]), { ok: true });
+  assert.deepEqual(verifyChain([m0, m1]), { ok: true, duplicates: 0 });
 });
 
 test("mirror node messages are base64-decoded back into audit messages", () => {

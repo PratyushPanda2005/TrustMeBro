@@ -48,20 +48,31 @@ export class AuditChain {
   }
 }
 
-export type ChainCheck = { ok: true } | { ok: false; brokenAt: number; why: string };
+export type ChainCheck = { ok: true; duplicates: number } | { ok: false; brokenAt: number; why: string };
 
+/**
+ * Checks the hash chain. Delivery to HCS is at-least-once: when a submit times out or the SDK's own
+ * retry gets DUPLICATE_TRANSACTION, the outbox can't tell whether the first attempt landed and resends.
+ * An exact replay of the message just accepted (same seq, same hash) adds nothing and is skipped and
+ * counted; any other difference (edit, gap, reorder, a different message at a used seq) still breaks it.
+ */
 export function verifyChain(messages: HcsMessage[]): ChainCheck {
   let prev = messages[0]?.prevHash ?? GENESIS;
   let expectSeq = messages[0]?.seq ?? 0;
+  let duplicates = 0;
   for (let i = 0; i < messages.length; i++) {
     const { hash, ...body } = messages[i];
     if (hashOf(body) !== hash) return { ok: false, brokenAt: i, why: "hash mismatch" };
+    if (i > 0 && hash === prev && body.seq === expectSeq - 1) {
+      duplicates++;
+      continue;
+    }
     if (body.prevHash !== prev) return { ok: false, brokenAt: i, why: "prevHash does not match previous message" };
     if (body.seq !== expectSeq) return { ok: false, brokenAt: i, why: `expected seq ${expectSeq}, got ${body.seq}` };
     prev = hash;
     expectSeq += 1;
   }
-  return { ok: true };
+  return { ok: true, duplicates };
 }
 
 /** Mirror Node GET /api/v1/topics/{id}/messages → decoded entries for the dashboard. */

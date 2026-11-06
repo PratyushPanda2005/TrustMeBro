@@ -16,6 +16,6 @@ while (next) {
   next = body.links?.next ?? null;
 }
 const result = verifyChain(entries.map(({ topicSequence, consensusTimestamp, ...m }) => m));
-console.log(`${entries.length} messages on ${topic}:`, result.ok ? "✅ chain intact" : `❌ broken at #${(result as any).brokenAt}: ${(result as any).why}`);
+console.log(`${entries.length} messages on ${topic}:`, result.ok ? `✅ chain intact${result.duplicates ? ` (${result.duplicates} exact resend${result.duplicates > 1 ? "s" : ""} skipped)` : ""}` : `❌ broken at #${(result as any).brokenAt}: ${(result as any).why}`);
 for (const e of entries) console.log(`#${e.seq} ${e.kind.padEnd(13)} ${e.payment?.hederaTxId ?? ""} ${e.reason}`);
 process.exitCode = result.ok ? 0 : 1;

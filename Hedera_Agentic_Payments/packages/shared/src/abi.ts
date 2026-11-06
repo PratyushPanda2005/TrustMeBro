@@ -16,6 +16,19 @@ export const OUTCOME = { Verified: 0, Pending: 1, Falsified: 2, Mismatch: 3 } as
 export const tradeDealsAgentAbi = [
   {
     "type": "function",
+    "name": "registry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract TrustRegistry"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getDeal",
     "inputs": [
       {
@@ -1126,5 +1139,28 @@ export const tradeDealsAgentAbi = [
     "type": "error",
     "name": "ZeroHash",
     "inputs": []
+  }
+] as const;
+
+/** TrustRegistry subset: the exporter's score in bps (0 if never onboarded), read before/after each relay. */
+export const trustRegistryAgentAbi = [
+  {
+    "type": "function",
+    "name": "trust",
+    "inputs": [
+      {
+        "name": "subject",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   }
 ] as const;

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { STATUS, judge } from "../src/trust.ts";
 import { VERIFICATION_TYPE_STRING } from "../src/eip712.ts";
-import { tradeDealsAgentAbi, DEAL_STATE, OUTCOME } from "../src/abi.ts";
+import { tradeDealsAgentAbi, trustRegistryAgentAbi, DEAL_STATE, OUTCOME } from "../src/abi.ts";
 
 const ROOT = new URL("../../../../", import.meta.url); // repo root (lane C's packages/ and contracts/)
 const laneC = (p: string) => new URL(p, ROOT);
@@ -61,6 +61,11 @@ test("every ABI entry the agent uses equals lane C's current generated ABI", { s
     const match = (tradeDealsAbi as any[]).find((e) => e.type === entry.type && e.name === entry.name);
     assert.ok(match, `${entry.type} ${entry.name} missing from lane C's ABI`);
     assert.deepEqual(entry, match, `${entry.type} ${entry.name} differs: re-extract packages/shared/src/abi.ts`);
+  }
+  const { trustRegistryAbi } = await import(laneC("packages/shared/src/abi/trustRegistry.ts").href);
+  for (const entry of trustRegistryAgentAbi as readonly any[]) {
+    const match = (trustRegistryAbi as any[]).find((e) => e.type === entry.type && e.name === entry.name);
+    assert.deepEqual(entry, match, `TrustRegistry ${entry.name} differs from lane C's ABI`);
   }
   const constants = await import(laneC("packages/shared/src/constants.ts").href);
   assert.deepEqual({ ...DEAL_STATE }, { ...constants.DealState });
