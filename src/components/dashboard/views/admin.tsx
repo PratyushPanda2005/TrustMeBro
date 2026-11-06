@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { amount, dateTime, pct, shortHash, usdt } from "@/lib/trade/format"
+import { amount, dateTime, shortHash, usdt } from "@/lib/trade/format"
 import { platformProfit } from "@/lib/trade/profit"
 import { actions, useTrade } from "@/lib/trade/store"
 
@@ -95,7 +95,7 @@ export function AdminParties() {
     <>
       <PageHeader
         title="Parties"
-        description="KYC allowlist: one address, one role. Scores change only through the formula."
+        description="Wallets with a role on Finance V2, read from its RoleGranted events."
       />
       <Card>
         <CardContent>
@@ -106,7 +106,8 @@ export function AdminParties() {
                 <TableHead>Role</TableHead>
                 <TableHead>Wallet</TableHead>
                 <TableHead>Score</TableHead>
-                <TableHead className="text-right">Credit left (USDT)</TableHead>
+                <TableHead className="text-right">USDT</TableHead>
+                <TableHead className="text-right">WBT</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -127,9 +128,10 @@ export function AdminParties() {
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {party.role === "exporter"
-                      ? amount(party.availableCredit)
-                      : "-"}
+                    {amount(party.usdt)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {party.gas.toFixed(3)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -158,11 +160,11 @@ export function AdminAgent() {
         description="The agent pays for checks and delivers them. The contract judges."
       />
       <StatGrid>
-        <StatCard label="Checks relayed" value={profit.checks} />
+        <StatCard label="Trades checked" value={profit.checks} />
         <StatCard
-          label="Cost of those checks"
-          value={`${profit.checkCost.toFixed(2)} USDC`}
-          hint="At 0.30 USDC each"
+          label="Answers ready to relay"
+          value={state.relays.length}
+          hint="Paid and signed by the verifier"
         />
         <StatCard label="Waiting on a human" value={state.pending.length} />
         <StatCard
@@ -171,7 +173,7 @@ export function AdminAgent() {
           hint={
             state.agentOnline
               ? "Paying over x402"
-              : "Local stand-in is relaying checks"
+              : "Run it to buy checks over x402"
           }
         />
       </StatGrid>
@@ -230,18 +232,7 @@ export function AdminAgent() {
         </Card>
       ) : null}
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="min-w-0 lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Agent activity</CardTitle>
-            <CardDescription>
-              This chain&apos;s checks, hash-chained, newest first.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <AuditTable entries={state.audit.slice(0, 20)} />
-          </CardContent>
-        </Card>
-        <Card className="h-fit">
+        <Card className="h-fit lg:col-span-3">
           <CardHeader>
             <CardTitle>Spending limits</CardTitle>
             <CardDescription>
@@ -266,8 +257,7 @@ export function AdminAgent() {
           <CardTitle>Hedera audit topic</CardTitle>
           <CardDescription>
             Real payments from topic {state.hedera.topicId}, read live from the
-            mirror node. Their deal numbers come from past test runs, not this
-            chain.
+            mirror node. Some entries come from earlier test runs.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -291,70 +281,28 @@ export function AdminFees() {
     <>
       <PageHeader
         title="Platform fees"
-        description="1% of each advance, split by the contract at funding."
+        description="1% of each invoice, paid to the treasury when a deal settles."
       />
       <StatGrid>
         <StatCard
-          label="Fees taken"
+          label="Fees earned"
           value={usdt(profit.fees)}
-          hint={`${profit.funded.length} funded deals`}
+          hint={`${profit.done.length} settled deals`}
         />
-        <StatCard
-          label="Platform profit"
-          value={usdt(profit.platform)}
-          hint="What's left after the split"
-        />
-        <StatCard
-          label="Reserve fund"
-          value={usdt(profit.reserve)}
-          hint="20% after agent and gas"
-        />
-        <StatCard
-          label="Agent and gas"
-          value={usdt(profit.agentFees)}
-          hint="1.50 USDT per deal"
-        />
+        <StatCard label="Advanced by investors" value={usdt(profit.volume)} />
+        <StatCard label="Funded deals" value={profit.funded.length} />
+        <StatCard label="Settled deals" value={profit.done.length} />
       </StatGrid>
       <Card>
         <CardHeader>
-          <CardTitle>Platform profit by month</CardTitle>
-          <CardDescription>USDT, by funding date</CardDescription>
+          <CardTitle>Fees by month</CardTitle>
+          <CardDescription>USDT, by settlement date</CardDescription>
         </CardHeader>
         <CardContent>
           <MonthlyBars
             data={profit.monthly}
-            series={[{ key: "fees", label: "Profit" }]}
+            series={[{ key: "fees", label: "Fees" }]}
           />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Parties</CardTitle>
-          <CardDescription>Trust as the contract holds it</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Party</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Raw score</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {state.parties
-                .filter((party) => party.role !== "investor")
-                .map((party) => (
-                  <TableRow key={party.id}>
-                    <TableCell className="font-medium">{party.name}</TableCell>
-                    <TableCell className="capitalize">{party.role}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {pct(party.trustBps)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
         </CardContent>
       </Card>
     </>

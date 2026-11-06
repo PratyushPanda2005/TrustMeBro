@@ -19,8 +19,7 @@
     "dev:legacy": "tsx watch src/index.ts",
     "diagnose:v2": "tsx src/v2-main.ts --diagnose",
     "setup:v2-demo": "tsx scripts/setup-v2-demo.ts",
-    "prepare:metamask": "tsx scripts/prepare-metamask.ts",
-    "stack": "tsx scripts/stack.ts"
+    "prepare:metamask": "tsx scripts/prepare-metamask.ts"
   },
   "dependencies": {
     "@trustmebro/shared": "file:../../packages/shared",

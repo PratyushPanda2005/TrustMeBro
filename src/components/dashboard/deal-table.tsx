@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { amount, date, pct } from "@/lib/trade/format"
+import { amount, date } from "@/lib/trade/format"
 import { getParty, useTrade } from "@/lib/trade/store"
 import type { Deal, Role } from "@/lib/trade/types"
 
@@ -61,9 +61,9 @@ export function DealTable({
             ),
           },
           {
-            head: "Yield",
+            head: "Profit (USDT)",
             right: true,
-            cell: (deal) => pct(deal.terms?.yieldBps ?? 0),
+            cell: (deal) => amount(deal.terms?.profit ?? 0),
           },
           {
             head: "Advance (USDT)",
@@ -80,7 +80,10 @@ export function DealTable({
             right: true,
             cell: (deal) => amount(deal.amount),
           },
-          { head: "Due", cell: (deal) => date(deal.dueAt) },
+          {
+            head: "Due",
+            cell: (deal) => (deal.dueAt ? date(deal.dueAt) : "-"),
+          },
           { head: "State", cell: (deal) => <StateBadge state={deal.state} /> },
         ]
 

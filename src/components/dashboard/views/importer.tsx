@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { pct, usdt } from "@/lib/trade/format"
+import { usdt } from "@/lib/trade/format"
 import { importerPayments } from "@/lib/trade/profit"
 import { importerScoreView } from "@/lib/trade/score"
 import { getParty, useTrade } from "@/lib/trade/store"
@@ -30,9 +30,7 @@ const useImporter = () => {
 
 export function ImporterOverview() {
   const { state, data, approvals } = useImporter()
-  const view = importerScoreView(
-    getParty(state, state.personas.importer).riskBps,
-  )
+  const view = importerScoreView(getParty(state, state.personas.importer).score)
   return (
     <>
       <PageHeader
@@ -42,7 +40,7 @@ export function ImporterOverview() {
       <StatGrid>
         <StatCard
           label="Risk Score"
-          value={pct(view.bps)}
+          value={view.value}
           hint={view.band}
           icon={Gauge}
         />
@@ -97,7 +95,7 @@ export function ImporterApprovals() {
     <>
       <PageHeader
         title="Approvals"
-        description="Approving accepts the debt. Nothing continues without it."
+        description="Confirming accepts the debt. Nothing continues without it."
       />
       <Card>
         <CardContent>
@@ -127,7 +125,7 @@ export function ImporterPayments() {
         <StatCard label="Invoices paid" value={data.paid.length} />
         <StatCard
           label="Risk Score"
-          value={pct(importer.riskBps)}
+          value={importerScoreView(importer.score).value}
           hint="Lower means cheaper trade"
         />
       </StatGrid>

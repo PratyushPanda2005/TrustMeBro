@@ -18,6 +18,7 @@ import { useConnection, type Connection } from "@/lib/trade/store"
 
 import { AppSidebar } from "./app-sidebar"
 import { RoleWash } from "./role-wash"
+import { WalletButton } from "./wallet-button"
 
 /** Views read chain state, so they wait for the first answer. */
 function Gate({
@@ -30,10 +31,9 @@ function Gate({
   if (connection.status === "offline") {
     return (
       <Alert>
-        <AlertTitle>The backend isn&apos;t running</AlertTitle>
+        <AlertTitle>Can&apos;t reach Whitechain</AlertTitle>
         <AlertDescription>
-          {connection.message} Start it with npm run stack, and this page
-          connects by itself.
+          {connection.message} This page reconnects by itself.
         </AlertDescription>
       </Alert>
     )
@@ -69,10 +69,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
               ? connection.state.network.name
               : "Connecting"}
           </Badge>
+          <WalletButton />
           <Button
-            variant="pill-outline"
-            size="pill-sm"
-            className="ml-auto"
+            variant="ghost"
             nativeButton={false}
             render={<Link href="/" />}
           >

@@ -20,6 +20,7 @@ const eslintConfig = defineConfig([
     "contracts/**",
     // Backend services have their own tsconfig and tests.
     "services/**",
+    "packages/**",
   ]),
 ])
 

@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { amount, pct, usdt } from "@/lib/trade/format"
+import { amount, usdt } from "@/lib/trade/format"
 import { investorProfit } from "@/lib/trade/profit"
 import { useTrade } from "@/lib/trade/store"
 
@@ -41,7 +41,7 @@ export function InvestorOverview() {
     <>
       <PageHeader
         title="Investor overview"
-        description="You replace the bank, and honesty sets the price."
+        description="You replace the bank, on Whitechain testnet."
       />
       <StatGrid>
         <StatCard
@@ -114,10 +114,7 @@ export function InvestorPortfolio() {
   const { profit } = useInvestor()
   return (
     <>
-      <PageHeader
-        title="Portfolio"
-        description="The receivable NFTs you hold."
-      />
+      <PageHeader title="Portfolio" description="The receivables you funded." />
       <Card>
         <CardContent>
           <Table>
@@ -126,8 +123,8 @@ export function InvestorPortfolio() {
                 <TableHead>Deal</TableHead>
                 <TableHead>Goods</TableHead>
                 <TableHead className="text-right">Principal (USDT)</TableHead>
-                <TableHead className="text-right">Yield</TableHead>
-                <TableHead className="text-right">Received (USDT)</TableHead>
+                <TableHead className="text-right">Profit (USDT)</TableHead>
+                <TableHead className="text-right">Paid back (USDT)</TableHead>
                 <TableHead>State</TableHead>
               </TableRow>
             </TableHeader>
@@ -147,10 +144,12 @@ export function InvestorPortfolio() {
                     {amount(deal.terms?.advance ?? 0)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {pct(deal.terms?.yieldBps ?? 0)}
+                    {amount(deal.terms?.profit ?? 0)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {amount(deal.paidToInvestor)}
+                    {deal.state === "Settled"
+                      ? amount(deal.terms?.investorDue ?? 0)
+                      : "-"}
                   </TableCell>
                   <TableCell>
                     <StateBadge state={deal.state} />

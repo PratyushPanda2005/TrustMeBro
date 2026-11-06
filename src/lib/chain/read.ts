@@ -1,10 +1,25 @@
 import "server-only"
 
-import { tradeDealsAbi, trustRegistryAbi } from "@trustmebro/shared"
-import { formatUnits, hexToString, zeroAddress, type Address } from "viem"
+import { USDT_ADDRESS } from "@trustmebro/shared"
+import {
+  ADMIN,
+  V2_CHAIN,
+  V2_FINANCE,
+  financeV2Abi,
+} from "@trustmebro/shared/v2"
+import {
+  createPublicClient,
+  erc20Abi,
+  formatEther,
+  formatUnits,
+  http,
+  parseAbi,
+  type Address,
+} from "viem"
 
+import { STAGES } from "@/lib/trade/score"
 import type {
-  AuditEntry,
+  Check,
   Deal,
   DealEvent,
   DealState,
@@ -14,56 +29,33 @@ import type {
 } from "@/lib/trade/types"
 
 import { readApprovals } from "./agent"
-import { publicClient } from "./client"
-import { loadDeployment, readAgentLog, readMeta } from "./deployment"
+import {
+  EXPLORER,
+  FROM_BLOCK,
+  RPC_URL,
+  partyNames,
+  personas,
+  readLabels,
+  readRelayPayloads,
+  readTradeMetadata,
+} from "./config"
 import { readHederaAudit } from "./hedera"
 
-const STATES: DealState[] = [
-  "Created",
-  "Created",
-  "Approved",
-  "Claimed",
-  "Pending",
-  "Verified",
-  "Funded",
-  "Settled",
-  "Rejected",
-  "Mismatch",
-  "Defaulted",
-  "Expired",
-  "Cancelled",
-]
+const LOG_RANGE = 1_500n
+const CACHE_MS = 4_000
+
+const client = createPublicClient({
+  transport: http(RPC_URL, { timeout: 10_000, retryCount: 1 }),
+})
+
+const finance = { address: V2_FINANCE, abi: financeV2Abi } as const
+const reputationAbi = parseAbi([
+  "function score(address) view returns (uint256)",
+])
 
 const usdt = (value: bigint) => Number(formatUnits(value, 6))
 const ms = (seconds: bigint) => Number(seconds) * 1000
 const optionalMs = (seconds: bigint) => (seconds ? ms(seconds) : undefined)
-
-/** Tags are short strings like PAID_ON_TIME, packed into bytes32. */
-const tagText = (tag: string) => {
-  try {
-    const text = hexToString(tag as `0x${string}`, { size: 32 })
-    const words = text.replace(/_/g, " ").toLowerCase()
-    return words.charAt(0).toUpperCase() + words.slice(1)
-  } catch {
-    return "Score updated"
-  }
-}
-
-const eventLabels: Record<string, string> = {
-  DealCreated: "Invoice created",
-  Approved: "Approved by the importer",
-  Claimed: "Shipment claims declared",
-  Verified: "Verified",
-  Pending: "Tracking behind, recheck pending",
-  Rejected: "Rejected: a claim was false",
-  Mismatch: "Mismatch: more goods than claimed",
-  Funded: "Funded",
-  Paid: "Importer paid",
-  Settled: "Settled",
-  Defaulted: "Defaulted",
-  Expired: "Expired",
-  Cancelled: "Cancelled",
-}
 
 type Log = {
   eventName: string
@@ -72,264 +64,320 @@ type Log = {
   transactionHash: `0x${string}`
 }
 
-function describe({ eventName, args }: Log) {
-  if (eventName === "Funded") {
-    return `${usdt(args.exporterNet as bigint)} USDT to the exporter, ${usdt(args.fee as bigint)} USDT fee`
+// Logs are append-only, so each poll only scans blocks it hasn't seen.
+const logs: Log[] = []
+const blockTimes = new Map<bigint, number>()
+let scanned = FROM_BLOCK - 1n
+
+async function syncLogs() {
+  const tip = await client.getBlockNumber({ cacheTime: 0 })
+  while (scanned < tip) {
+    const fromBlock = scanned + 1n
+    const toBlock =
+      fromBlock + LOG_RANGE - 1n < tip ? fromBlock + LOG_RANGE - 1n : tip
+    const found = await client.getContractEvents({
+      ...finance,
+      fromBlock,
+      toBlock,
+    })
+    logs.push(...(found as unknown as Log[]))
+    scanned = toBlock
   }
-  if (eventName === "Paid") {
-    return `${usdt(args.toInvestor as bigint)} USDT to the investor, ${usdt(args.toExporter as bigint)} USDT to the exporter`
-  }
-  if (eventName === "Claimed") {
-    return `${(args.declaredKg as number).toLocaleString("en-US")} kg, container ${args.containerNo}`
-  }
-  return undefined
 }
 
-const blockTimes = new Map<bigint, number>()
-let blockTip = 0n
+async function timeOf(blockNumber: bigint) {
+  if (!blockTimes.has(blockNumber)) {
+    const block = await client.getBlock({ blockNumber })
+    blockTimes.set(blockNumber, ms(block.timestamp))
+  }
+  return blockTimes.get(blockNumber) as number
+}
 
-export async function readState(): Promise<TradeState> {
-  const deployment = loadDeployment()
-  const client = publicClient(deployment)
-  const deals = { address: deployment.tradeDeals, abi: tradeDealsAbi } as const
-  const registry = {
-    address: deployment.trustRegistry,
-    abi: trustRegistryAbi,
-  } as const
+const short = (address: unknown) =>
+  `${String(address).slice(0, 6)}...${String(address).slice(-4)}`
 
-  const fromBlock = BigInt(process.env.FROM_BLOCK ?? 0)
+const describe: Record<
+  string,
+  (args: Record<string, unknown>) => [string, string?]
+> = {
+  TradeCreated: (args) => [
+    "Invoice created",
+    `${usdt(args.face as bigint)} USDT`,
+  ],
+  AgreementConfirmed: (args) => [
+    "Agreement confirmed",
+    `Signed by ${short(args.signer)}`,
+  ],
+  ShipmentChecked: (args) => [
+    args.result === 1 ? "Shipment verified" : "Shipment check failed",
+    `${String(args.mode).replaceAll("_", " ").toLowerCase()}, ${STAGES[args.stage as number]}`,
+  ],
+  Funded: (args) => [
+    "Funded",
+    `${usdt(args.advance as bigint)} USDT advanced to the exporter`,
+  ],
+  Settled: (args) => [
+    "Settled",
+    `${usdt(args.investor as bigint)} USDT to the holder, ${usdt(args.exporter as bigint)} USDT to the exporter, ${usdt(args.fee as bigint)} USDT fee`,
+  ],
+  DefaultRecorded: () => ["Defaulted"],
+}
 
-  const [count, tradeLogs, registryLogs, approvals, hedera] = await Promise.all(
-    [
-      client.readContract({ ...deals, functionName: "dealCount" }),
-      client.getContractEvents({ ...deals, fromBlock }),
-      client.getContractEvents({ ...registry, fromBlock }),
-      readApprovals(),
-      readHederaAudit(),
-    ],
+function stateOf(
+  raw: { state: number; verification: number; importerApproved: boolean },
+  defaulted: boolean,
+): DealState {
+  if (defaulted) return "Defaulted"
+  if (raw.state === 4) return "Settled"
+  if (raw.state === 2) return "Funded"
+  if (raw.state !== 1) return "Closed"
+  if (raw.verification === 3) return "Rejected"
+  if (raw.verification === 1) return "Verified"
+  return raw.importerApproved ? "Approved" : "Created"
+}
+
+const toTerms = (value: {
+  score: bigint
+  advance: bigint
+  profit: bigint
+  investor: bigint
+  fee: bigint
+  exporter: bigint
+}): Terms => ({
+  score: Number(value.score),
+  advance: usdt(value.advance),
+  profit: usdt(value.profit),
+  investorDue: usdt(value.investor),
+  fee: usdt(value.fee),
+  exporterRemainder: usdt(value.exporter),
+  raw: [
+    value.score,
+    value.advance,
+    value.profit,
+    value.investor,
+    value.fee,
+    value.exporter,
+  ].map(String) as Terms["raw"],
+})
+
+async function readFresh(): Promise<TradeState> {
+  const [nextId, reputation, treasury, approvals, hedera] = await Promise.all([
+    client.readContract({ ...finance, functionName: "nextId" }),
+    client.readContract({ ...finance, functionName: "reputation" }),
+    client.readContract({ ...finance, functionName: "treasury" }),
+    readApprovals(),
+    readHederaAudit(),
+  ])
+
+  const rawDeals = await Promise.all(
+    Array.from({ length: Number(nextId) - 1 }, (_, index) =>
+      client.readContract({
+        ...finance,
+        functionName: "getDeal",
+        args: [BigInt(index + 1)],
+      }),
+    ),
   )
+  // After the deals, so the logs always cover every state just read.
+  await syncLogs()
 
-  // Block times never change, so each is fetched once. A restarted local chain
-  // reuses block numbers, which shows up as logs ending before the known tip.
-  const tip = tradeLogs.at(-1)?.blockNumber ?? 0n
-  if (tip < blockTip) blockTimes.clear()
-  blockTip = tip
-  const timeOf = async (blockNumber: bigint) => {
-    if (!blockTimes.has(blockNumber)) {
-      const block = await client.getBlock({ blockNumber })
-      blockTimes.set(blockNumber, ms(block.timestamp))
-    }
-    return blockTimes.get(blockNumber) as number
-  }
-
-  const logs = tradeLogs as unknown as Log[]
-  const eventsByDeal = new Map<string, DealEvent[]>()
-  const fundedBy = new Map<string, Log>()
-  const splitBy = new Map<string, Log>()
+  const byDeal = new Map<string, Log[]>()
   for (const log of logs) {
-    const id = String(log.args.dealId)
-    if (log.eventName === "Funded") fundedBy.set(id, log)
-    if (log.eventName === "FeeSplit") splitBy.set(id, log)
-    const label = eventLabels[log.eventName]
-    if (!label) continue
-    const list = eventsByDeal.get(id) ?? []
-    list.push({
-      at: await timeOf(log.blockNumber),
-      label,
-      detail: describe(log),
-      tx: { chain: "whitechain", hash: log.transactionHash },
-    })
-    eventsByDeal.set(id, list)
+    if (log.args.id === undefined) continue
+    const id = String(log.args.id)
+    byDeal.set(id, [...(byDeal.get(id) ?? []), log])
   }
 
-  const meta = readMeta()
-  const agentLog = readAgentLog()
+  const labels = readLabels()
+  const metadata = readTradeMetadata()
+  const now = Date.now()
 
-  const dealRows = await Promise.all(
-    Array.from({ length: Number(count) }, async (_, index): Promise<Deal> => {
+  const deals = await Promise.all(
+    rawDeals.map(async (raw, index): Promise<Deal> => {
       const dealId = BigInt(index + 1)
       const id = dealId.toString()
-      const [deal, shipment, times, quote] = await Promise.all([
-        client.readContract({
-          ...deals,
-          functionName: "getDeal",
-          args: [dealId],
-        }),
-        client.readContract({
-          ...deals,
-          functionName: "getShipment",
-          args: [dealId],
-        }),
-        client.readContract({
-          ...deals,
-          functionName: "deadlines",
-          args: [dealId],
-        }),
-        client.readContract({
-          ...deals,
-          functionName: "quote",
-          args: [dealId],
-        }),
-      ])
+      const own = byDeal.get(id) ?? []
+      const funded = own.find((log) => log.eventName === "Funded")
+      const settled = own.find((log) => log.eventName === "Settled")
+      const checked = own.findLast((log) => log.eventName === "ShipmentChecked")
+      const defaulted = own.some((log) => log.eventName === "DefaultRecorded")
+      const state = stateOf(raw, defaulted)
 
-      const funded = fundedBy.get(id)
-      const split = splitBy.get(id)
-      const live = {
-        advanceBps: Number(quote.advanceBps),
-        advance: usdt(quote.advance),
-        fee: usdt(quote.fee),
-        agentFee: usdt(quote.agentFee),
-        gasFee: usdt(quote.gasFee),
-        reserveFee: usdt(quote.reserveFee),
-        platformFee: usdt(quote.platformFee),
-        exporterNet: usdt(quote.exporterNet),
-        yieldBps: Number(quote.yieldBps),
-        yieldAmount: usdt(quote.yieldAmount),
-        investorDue: usdt(quote.investorDue),
-      }
-      const frozen: Terms | undefined =
-        funded && split
-          ? {
-              advanceBps: deal.advanceBps,
-              advance: usdt(deal.advance),
-              fee: usdt(deal.fee),
-              agentFee: usdt(split.args.agentFee as bigint),
-              gasFee: usdt(split.args.gasFee as bigint),
-              reserveFee: usdt(split.args.reserveFee as bigint),
-              platformFee: usdt(split.args.platformFee as bigint),
-              exporterNet: usdt(funded.args.exporterNet as bigint),
-              yieldBps: deal.yieldBps,
-              yieldAmount: usdt(deal.investorDue - deal.advance),
-              investorDue: usdt(deal.investorDue),
+      const events: DealEvent[] = await Promise.all(
+        own
+          .filter((log) => describe[log.eventName])
+          .map(async (log) => {
+            const [label, detail] = describe[log.eventName](log.args)
+            return {
+              at: await timeOf(log.blockNumber),
+              label,
+              detail,
+              tx: { chain: "whitechain" as const, hash: log.transactionHash },
             }
-          : undefined
+          }),
+      )
 
+      let terms: Terms | undefined
+      if (raw.fundedAt) terms = toTerms(raw.financial)
+      else if (state === "Verified") {
+        terms = await client
+          .readContract({ ...finance, functionName: "quote", args: [dealId] })
+          .then(toTerms, () => undefined)
+      }
+
+      let check: Check | undefined
+      if (checked) {
+        const args = checked.args
+        check = {
+          mode: String(args.mode),
+          result: args.result as number,
+          stage: args.stage as number,
+          quantity: Number(args.quantity),
+          documentHash: String(args.documentHash),
+          reportHash: String(args.reportHash),
+          verifier: String(args.verifier),
+          at: await timeOf(checked.blockNumber),
+          tx: { chain: "whitechain", hash: checked.transactionHash },
+        }
+      }
+
+      const meta = metadata[id]
       return {
         id,
-        goods: meta[id]?.goods ?? `Invoice ${id}`,
-        invoiceRef: meta[id]?.invoiceRef ?? deal.invoiceHash.slice(0, 10),
-        exporterId: deal.exporter,
-        importerId: deal.importer,
-        investorId: deal.investor === zeroAddress ? undefined : deal.investor,
-        amount: usdt(deal.amount),
-        paid: usdt(deal.paid),
-        paidToInvestor: usdt(deal.paidToInvestor),
-        createdAt: ms(deal.createdAt),
-        dueAt: ms(deal.dueDate),
-        fundedAt: optionalMs(deal.fundedAt),
-        closedAt: optionalMs(deal.closedAt),
-        listingDeadline: optionalMs(times[1]),
-        graceEnd: optionalMs(times[3]),
-        state: STATES[deal.state],
-        terms: frozen ?? live,
-        claims: deal.claimTime
-          ? {
-              declaredKg: deal.declaredKg,
-              status: deal.claimedStatus,
-              docHash: deal.docHash,
-              containerNo: shipment.containerNo,
-              blRef: shipment.blRef,
-              at: ms(deal.claimTime),
-              verifyDeadline: ms(deal.verifyDeadline),
-            }
-          : undefined,
-        observed: deal.observedAt
-          ? {
-              kg: deal.observedKg,
-              status: deal.observedStatus,
-              docHash: deal.observedDocHash,
-              at: ms(deal.observedAt),
-            }
-          : undefined,
-        evidence: agentLog.evidence[id] as Deal["evidence"],
-        falsifiedMask: deal.falsifiedMask,
-        checks: deal.checks,
-        canExpire:
-          STATES[deal.state] === "Verified" && Date.now() > ms(times[1]),
-        canDefault:
-          STATES[deal.state] === "Funded" && Date.now() > ms(times[3]),
-        events: eventsByDeal.get(id) ?? [],
+        goods:
+          labels[id]?.goods ??
+          meta?.commercial.goodsDescription ??
+          `Trade ${id}`,
+        invoiceRef:
+          labels[id]?.invoiceRef ?? raw.terms.invoiceHash.slice(0, 10),
+        exporterId: raw.exporter,
+        importerId: raw.terms.importer,
+        investorId: funded ? String(funded.args.investor) : undefined,
+        holderId: settled ? String(settled.args.holder) : undefined,
+        amount: usdt(raw.terms.face),
+        createdAt: ms(raw.createdAt),
+        expiry: ms(raw.terms.expiry),
+        dueAt: optionalMs(raw.dueAt),
+        fundedAt: optionalMs(raw.fundedAt),
+        closedAt: settled ? await timeOf(settled.blockNumber) : undefined,
+        state,
+        terms,
+        shipment: {
+          quantity: Number(raw.terms.quantity),
+          unit: meta?.unit,
+          minimumStage: raw.terms.minimumStage,
+          documentHash: raw.terms.documentHash,
+          reference: meta?.shipmentReference,
+        },
+        check,
+        canDefault: state === "Funded" && now > ms(raw.dueAt) + 7 * 86_400_000,
+        events,
       }
     }),
   )
 
-  const feedback = (registryLogs as unknown as Log[]).filter(
-    (log) => log.eventName === "Feedback",
+  const roleByHash = new Map<string, Party["role"]>()
+  await Promise.all(
+    (
+      [
+        ["EXPORTER_ROLE", "exporter"],
+        ["IMPORTER_ROLE", "importer"],
+        ["INVESTOR_ROLE", "investor"],
+      ] as const
+    ).map(async ([functionName, role]) => {
+      roleByHash.set(
+        await client.readContract({ ...finance, functionName }),
+        role,
+      )
+    }),
   )
+
+  const members = new Map<string, Party["role"]>()
+  for (const log of logs) {
+    const role = roleByHash.get(String(log.args.role))
+    if (log.eventName === "RoleGranted" && role) {
+      members.set(String(log.args.account), role)
+    }
+  }
 
   const parties = await Promise.all(
-    Object.entries(deployment.parties).map(
-      async ([address, info]): Promise<Party> => {
-        const wallet = address as Address
-        const [profile, limit, available] = await Promise.all([
-          client.readContract({
-            ...registry,
-            functionName: "profile",
-            args: [wallet],
-          }),
-          client.readContract({
-            ...deals,
-            functionName: "creditLimit",
-            args: [wallet],
-          }),
-          client.readContract({
-            ...deals,
-            functionName: "availableCredit",
-            args: [wallet],
-          }),
-        ])
-        const history = await Promise.all(
-          feedback
-            .filter(
-              (log) =>
-                String(log.args.subject).toLowerCase() === wallet.toLowerCase(),
-            )
-            .map(async (log) => ({
-              at: await timeOf(log.blockNumber),
-              dealId: String(log.args.dealId),
-              scoreBps: Number(log.args.scoreBps),
-              reason: tagText(log.args.tag as string),
-            })),
-        )
-        return {
-          id: wallet,
-          name: info.name,
-          role: info.role,
-          rep: {
-            r: Number(profile.r),
-            s: Number(profile.s),
-            a: Number(profile.a),
-            b: Number(profile.b),
-          },
-          trustBps: Number(profile.trustBps),
-          riskBps: Number(profile.riskBps),
-          advanceBps: Number(profile.advanceBps),
-          creditLimit: usdt(limit),
-          availableCredit: usdt(available),
-          history,
-        }
-      },
-    ),
+    [...members].map(async ([id, role]): Promise<Party> => {
+      const wallet = id as Address
+      const [score, balance, gas] = await Promise.all([
+        client.readContract({
+          address: reputation,
+          abi: reputationAbi,
+          functionName: "score",
+          args: [wallet],
+        }),
+        client.readContract({
+          address: USDT_ADDRESS,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [wallet],
+        }),
+        client.getBalance({ address: wallet }),
+      ])
+      return {
+        id,
+        name: partyNames[id] ?? short(id),
+        role,
+        score: Number(score),
+        usdt: usdt(balance),
+        gas: Number(formatEther(gas)),
+        history: deals
+          .filter(
+            (deal) =>
+              deal.fundedAt && [deal.exporterId, deal.importerId].includes(id),
+          )
+          .map((deal) => ({
+            at: deal.fundedAt as number,
+            dealId: deal.id,
+            score: deal.terms?.score ?? 0,
+            reason: "Deal score at funding",
+          }))
+          .sort((a, b) => a.at - b.at),
+      }
+    }),
   )
-
-  const audit: AuditEntry[] = agentLog.entries.map((entry) => ({
-    ...entry,
-    tx: entry.tx ? { chain: "whitechain", hash: entry.tx } : undefined,
-  }))
 
   return {
     network: {
-      name: deployment.name,
-      chainId: deployment.chainId,
-      tradeDeals: deployment.tradeDeals,
-      serverSigning: Boolean(deployment.keys),
+      name: "Whitechain Sepolia",
+      chainId: V2_CHAIN,
+      finance: V2_FINANCE,
+      usdt: USDT_ADDRESS,
+      admin: ADMIN,
+      treasury,
+      explorer: EXPLORER,
     },
-    personas: deployment.personas,
+    personas,
     parties,
-    deals: dealRows.reverse(),
-    audit,
+    deals: deals.reverse(),
     hedera,
     pending: approvals.pending,
+    relays: readRelayPayloads(),
     agentOnline: approvals.online,
   }
+}
+
+let cached: { at: number; state: TradeState } | undefined
+let inFlight: Promise<TradeState> | undefined
+
+/** Shared by every open tab, which keeps the app inside the RPC's rate limit. */
+export async function readState() {
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.state
+  inFlight ??= readFresh()
+    .then((state) => {
+      cached = { at: Date.now(), state }
+      return state
+    })
+    .finally(() => {
+      inFlight = undefined
+    })
+  return inFlight
+}
+
+export async function refreshState() {
+  cached = undefined
 }

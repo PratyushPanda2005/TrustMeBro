@@ -1,13 +1,25 @@
 "use client"
 
 import { useSyncExternalStore } from "react"
+import { prepareTrade } from "@trustmebro/shared/v2"
 import { toast } from "sonner"
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  UserRejectedRequestError,
+  keccak256,
+  parseUnits,
+  stringToHex,
+  type Address,
+  type Hex,
+} from "viem"
 
-import type { TradeAction } from "@/lib/chain/write"
+import type { TradeAction } from "@/lib/chain/trade"
 
-import type { Party, TradeState } from "./types"
+import type { Deal, Party, RelayPayload, TradeState } from "./types"
+import { chainActions } from "./wallet"
 
-const POLL_MS = 2_000
+const POLL_MS = 5_000
 
 export type Connection =
   | { status: "loading" }
@@ -92,7 +104,7 @@ export const getParty = (state: TradeState, id: string): Party => {
   return party
 }
 
-const send = async (action: TradeAction, success: string) => {
+const post = async (action: TradeAction) => {
   const response = await fetch("/api/trade", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -100,44 +112,134 @@ const send = async (action: TradeAction, success: string) => {
   })
   if (!response.ok) {
     const { error } = (await response.json()) as { error: string }
-    toast.error(error)
-    return false
+    throw new Error(error)
   }
-  toast.success(success)
   await refresh()
-  return true
 }
 
-type Create = Extract<TradeAction, { type: "createDeal" }>
-type Declare = Extract<TradeAction, { type: "declareClaims" }>
+/** A revert or a rejected signature becomes one plain sentence. */
+function explain(error: unknown) {
+  if (error instanceof BaseError) {
+    if (error.walk((cause) => cause instanceof UserRejectedRequestError)) {
+      return "Cancelled in your wallet."
+    }
+    const revert = error.walk(
+      (cause) => cause instanceof ContractFunctionRevertedError,
+    ) as ContractFunctionRevertedError | undefined
+    return revert?.reason ?? revert?.data?.errorName ?? error.shortMessage
+  }
+  return error instanceof Error ? error.message : "Something went wrong"
+}
+
+const run = async (work: () => Promise<unknown>, success: string) => {
+  try {
+    await work()
+    await post({ type: "refresh" })
+    toast.success(success)
+    return true
+  } catch (error) {
+    toast.error(explain(error))
+    return false
+  }
+}
+
+const face = (deal: Deal) => parseUnits(deal.amount.toString(), 6)
+
+type NewInvoice = {
+  exporter: string
+  importer: string
+  invoiceNumber: string
+  amount: string
+  goods: string
+  shipmentReference: string
+  quantity: string
+  unit: string
+  issuer: string
+  recordId: string
+}
 
 export const actions = {
-  createInvoice: (input: Omit<Create, "type">) =>
-    send({ type: "createDeal", ...input }, "Invoice created onchain"),
-  approve: (dealId: string) =>
-    send({ type: "approveDeal", dealId }, "Invoice approved"),
-  declare: (input: Omit<Declare, "type">) =>
-    send(
-      { type: "declareClaims", ...input },
-      "Claims declared. The agent is checking them",
+  createInvoice: (input: NewInvoice) =>
+    run(async () => {
+      const prepared = prepareTrade(
+        {
+          exporter: input.exporter as Address,
+          importer: input.importer as Address,
+          invoiceAmount: input.amount,
+          goodsDescription: input.goods,
+          shipmentReference: input.shipmentReference,
+          quantity: input.quantity,
+          unit: input.unit,
+          invoiceNumber: input.invoiceNumber,
+          record: {
+            issuer: input.issuer,
+            recordId: input.recordId,
+            shipmentReference: input.shipmentReference,
+            quantity: input.quantity,
+            unit: input.unit,
+            goodsDescription: input.goods,
+          },
+        },
+        BigInt(Math.floor(Date.now() / 1000)),
+      )
+      if (!prepared.ok) throw new Error(prepared.missing.join(". "))
+      const id = await chainActions.createTrade(input.exporter, prepared.terms)
+      await post({
+        type: "saveTrade",
+        id,
+        metadata: prepared.metadata,
+        goods: input.goods,
+        invoiceRef: input.invoiceNumber,
+      })
+    }, "Invoice created on Whitechain"),
+  confirm: (deal: Deal) =>
+    run(
+      () => chainActions.confirm(deal.importerId, deal.id),
+      "Agreement confirmed",
     ),
-  fund: (dealId: string) =>
-    send({ type: "fund", dealId }, "Funded. The exporter has been paid"),
-  pay: (dealId: string, amount: number) =>
-    send({ type: "pay", dealId, amount }, "Payment sent"),
-  cancel: (dealId: string) =>
-    send({ type: "cancel", dealId }, "Deal cancelled"),
-  markDefault: (dealId: string) =>
-    send({ type: "markDefault", dealId }, "Deal marked as defaulted"),
-  expire: (dealId: string) => send({ type: "expire", dealId }, "Deal expired"),
+  reject: (deal: Deal) =>
+    run(() => chainActions.reject(deal.importerId, deal.id), "Trade rejected"),
+  verifyManual: (deal: Deal, admin: string, stage: number) =>
+    run(
+      () =>
+        chainActions.verifyManual(
+          admin,
+          deal.id,
+          deal.shipment.documentHash as Hex,
+          BigInt(deal.shipment.quantity),
+          stage,
+          keccak256(stringToHex(`manual review of trade ${deal.id}`)),
+        ),
+      "Verified. Investors can fund it now",
+    ),
+  relay: (from: string, relay: RelayPayload) =>
+    run(
+      () => chainActions.relay(from, relay.to as Address, relay.data as Hex),
+      "Signed answer relayed. The contract has decided",
+    ),
+  fund: (deal: Deal, investor: string, treasury: string) =>
+    run(async () => {
+      if (!deal.terms) throw new Error("This deal has no quote yet.")
+      await chainActions.fund(investor, deal.id, deal.terms.raw, treasury)
+    }, "Funded. The exporter has been paid"),
+  pay: (deal: Deal) =>
+    run(
+      () => chainActions.repay(deal.importerId, deal.id, face(deal)),
+      "Repaid and settled",
+    ),
+  markDefault: (deal: Deal, caller: string) =>
+    run(
+      () => chainActions.markDefault(caller, deal.id),
+      "Deal marked as defaulted",
+    ),
   approvePayment: (id: string) =>
-    send(
-      { type: "decideApproval", id, decision: "approve" },
+    run(
+      () => post({ type: "decideApproval", id, decision: "approve" }),
       "Payment approved",
     ),
   rejectPayment: (id: string) =>
-    send(
-      { type: "decideApproval", id, decision: "reject" },
+    run(
+      () => post({ type: "decideApproval", id, decision: "reject" }),
       "Payment rejected",
     ),
 }

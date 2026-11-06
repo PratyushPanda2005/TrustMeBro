@@ -13,49 +13,31 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 ## Running the full product
 
-The dashboards read live contract state, so they need the backend:
+The dashboards read Finance V2 live on Whitechain Sepolia (chain 1874), and every action is signed in MetaMask. The server holds no keys.
 
 ```bash
 npm install
-(cd contracts && npm install && npx forge build)
-(cd services/verifier && npm install)
-
-npm run stack    # local chain, contracts, verifier, agent stand-in and seeded deals
-npm run dev      # in a second terminal
+npm run dev
 ```
 
-`npm run stack` wipes the chain each time it starts. It signs with public test keys, on the local chain only.
+| Role     | Wallet                                       |
+| -------- | -------------------------------------------- |
+| Exporter | `0x4DCdA2a3b4b8c8aC71d3e9224e5a80FBF9a4219C` |
+| Importer | `0xEd450f58f5287d37Ca9200930F14EbcaFa44CFF4` |
+| Investor | `0x0dfd32c23580B576bCfEFcd418861162F4053873` |
+| Admin    | `0xB758E119133050305520E2F47362cfDd9E55A325` |
 
-### Using the real agent
+A trade's check comes from one of two places:
 
-The stand-in relays checks without paying. To run the Hedera agent instead, fill in `Hedera_Agentic_Payments/.env`, then:
+- **Paid check:** run the verifier and agent with the team's keys, following `V2_METAMASK_DEMO.md`. The agent's signed answer appears on the admin deal page, ready to relay from MetaMask.
+- **Manual check:** the admin records it from the same page, with no x402 payment. This is what trades 1 and 2 used.
 
-```bash
-PAYMENTS=on VERIFIER_PAYTO=0.0.x LOCAL_AGENT=off npm run stack
-cd Hedera_Agentic_Payments && CHAIN_ADAPTER=local pnpm agent
-```
-
-### Moving to Whitechain
-
-Deploy the contracts, then set these for the dashboard:
-
-```bash
-CHAIN=whitechain
-TRADEDEALS_ADDRESS=0x...
-REGISTRY_ADDRESS=0x...
-USDT_ADDRESS=0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7
-VERIFIER_URL=https://...
-PARTIES='{"0x...":{"name":"Ravi Exports","role":"exporter"}}'
-PERSONAS='{"exporter":"0x...","importer":"0x...","investor":"0x..."}'
-```
-
-Reads work straight away. Writes need wallet signing, which is the remaining step: on a real network the dashboard shows a "connect a wallet" notice instead of acting.
+Set `PARTY_NAMES` and `PERSONAS` to change the wallets the dashboards show. New trades write their shipment details to `Hedera_Agentic_Payments/services/agent/.state/v2/`, where the agent reads them. This needs a writable disk, so hosting needs a small database instead.
 
 ## Scripts
 
 | Command             | What it does         |
 | ------------------- | -------------------- |
-| `npm run stack`     | Start the backend    |
 | `npm run dev`       | Start the dev server |
 | `npm run build`     | Build for production |
 | `npm run start`     | Serve the build      |

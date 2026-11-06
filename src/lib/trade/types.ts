@@ -1,27 +1,21 @@
 export type Role = "exporter" | "importer" | "investor" | "admin"
 
-/** Mirrors `ITradeDeals.State`. */
+/** Read from Finance V2: `state`, `importerApproved`, `verification` and events. */
 export type DealState =
   | "Created"
   | "Approved"
-  | "Claimed"
-  | "Pending"
   | "Verified"
   | "Funded"
   | "Settled"
   | "Rejected"
-  | "Mismatch"
   | "Defaulted"
-  | "Expired"
-  | "Cancelled"
-
-/** Reputation counters, in basis points, as held by `TrustRegistry`. */
-export type Rep = { r: number; s: number; a: number; b: number }
+  | "Closed"
 
 export type ScorePoint = {
   at: number
   dealId: string
-  scoreBps: number
+  /** The deal score, out of 100. */
+  score: number
   reason: string
 }
 
@@ -30,14 +24,10 @@ export type Party = {
   id: string
   name: string
   role: Exclude<Role, "admin">
-  rep: Rep
-  trustBps: number
-  /** Importers: the investor's yield on a new deal. */
-  riskBps: number
-  /** Exporters: 0 means blocked for scoring below 40%. */
-  advanceBps: number
-  creditLimit: number
-  availableCredit: number
+  /** `Reputation.score`, out of 100. */
+  score: number
+  usdt: number
+  gas: number
   history: ScorePoint[]
 }
 
@@ -50,43 +40,37 @@ export type DealEvent = {
   tx?: TxRef
 }
 
-/** From `quote()` until funding, then frozen from the `Funded` event. */
+/** From `quote()` once a trade can be funded, then frozen in `getDeal().financial`. */
 export type Terms = {
-  advanceBps: number
+  score: number
   advance: number
-  fee: number
-  agentFee: number
-  gasFee: number
-  reserveFee: number
-  platformFee: number
-  exporterNet: number
-  yieldBps: number
-  yieldAmount: number
+  profit: number
   investorDue: number
+  fee: number
+  exporterRemainder: number
+  /** The exact values `fund()` must commit to. */
+  raw: [string, string, string, string, string, string]
 }
 
-export type Claims = {
-  declaredKg: number
-  status: number
-  docHash: string
-  containerNo: string
-  blRef: string
+export type Shipment = {
+  quantity: number
+  unit?: string
+  minimumStage: number
+  documentHash: string
+  reference?: string
+}
+
+export type Check = {
+  mode: string
+  /** 1 means Valid. */
+  result: number
+  stage: number
+  quantity: number
+  documentHash: string
+  reportHash: string
+  verifier: string
   at: number
-  verifyDeadline: number
-}
-
-export type Observed = {
-  kg: number
-  status: number
-  docHash: string
-  at: number
-}
-
-/** The verifier's sources for a check. Simulated data, per the plan. */
-export type Evidence = {
-  weighbridge: { source: string; ticket: string; kg: number }
-  tracking: { source: string; containerNo: string; status: number }
-  documents: { source: string; blRef: string; bundleHash: string }
+  tx: TxRef
 }
 
 export type Deal = {
@@ -96,26 +80,17 @@ export type Deal = {
   exporterId: string
   importerId: string
   investorId?: string
+  holderId?: string
   amount: number
-  paid: number
-  paidToInvestor: number
   createdAt: number
-  dueAt: number
+  expiry: number
+  dueAt?: number
   fundedAt?: number
   closedAt?: number
-  listingDeadline?: number
-  graceEnd?: number
   state: DealState
   terms?: Terms
-  claims?: Claims
-  observed?: Observed
-  evidence?: Evidence
-  /** Bit 0 weight, bit 1 documents, bit 2 status. */
-  falsifiedMask: number
-  checks: number
-  /** The listing window closed with no investor. */
-  canExpire: boolean
-  /** Unpaid past the due date and grace period. */
+  shipment: Shipment
+  check?: Check
   canDefault: boolean
   events: DealEvent[]
 }
@@ -142,12 +117,24 @@ export type PendingApproval = {
   at: number
 }
 
+/** A paid, signed answer from the agent, ready for a wallet to relay. */
+export type RelayPayload = {
+  dealId: string
+  to: string
+  data: string
+  label: string
+  hederaTx: string
+  expiry: number
+}
+
 export type Network = {
   name: string
   chainId: number
-  tradeDeals: string
-  /** Transactions are signed on the server with test keys. Local chain only. */
-  serverSigning: boolean
+  finance: string
+  usdt: string
+  admin: string
+  treasury: string
+  explorer: string
 }
 
 export type TradeState = {
@@ -155,11 +142,9 @@ export type TradeState = {
   personas: Record<Exclude<Role, "admin">, string>
   parties: Party[]
   deals: Deal[]
-  /** From the agent running against this chain. */
-  audit: AuditEntry[]
-  /** Live entries from the Hedera audit topic. */
   hedera: { topicId: string; entries: AuditEntry[] }
   pending: PendingApproval[]
+  relays: RelayPayload[]
   /** The Hedera agent's API answered. */
   agentOnline: boolean
 }

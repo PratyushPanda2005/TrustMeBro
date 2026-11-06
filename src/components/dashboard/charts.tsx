@@ -99,7 +99,7 @@ export function ScoreLine({
 }) {
   const data = history.map((point) => ({
     when: date(point.at),
-    score: transform(point.scoreBps) / 100,
+    score: transform(point.score),
   }))
   const config: ChartConfig = { score: { label, color: "var(--chart-1)" } }
   return (

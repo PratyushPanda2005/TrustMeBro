@@ -7,7 +7,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-export { financeV2Abi } from "./abi/financeV2.js";
+export { financeV2Abi } from "./abi/financeV2";
 
 export const V2_CHAIN = 1874;
 export const V2_FINANCE = getAddress(

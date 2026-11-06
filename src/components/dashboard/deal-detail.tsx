@@ -1,9 +1,7 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { Check, X } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import {
   Card,
   CardContent,
@@ -17,11 +15,6 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
-import {
-  Progress,
-  ProgressLabel,
-  ProgressValue,
-} from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import {
   Table,
@@ -31,12 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { date, dateTime, pct, shortHash, usdt } from "@/lib/trade/format"
-import {
-  SHIPMENT_STATUS,
-  exporterScoreView,
-  importerScoreView,
-} from "@/lib/trade/score"
+import { date, dateTime, shortHash, usdt } from "@/lib/trade/format"
+import { STAGES, exporterScoreView, importerScoreView } from "@/lib/trade/score"
 import { getParty, useTrade } from "@/lib/trade/store"
 import type { Deal, Role } from "@/lib/trade/types"
 
@@ -71,42 +60,25 @@ function Timeline({ deal }: { deal: Deal }) {
   )
 }
 
-function Verdict({ ok }: { ok: boolean }) {
-  return (
-    <Badge variant={ok ? "secondary" : "destructive"}>
-      {ok ? <Check data-icon="inline-start" /> : <X data-icon="inline-start" />}
-      {ok ? "Match" : "False"}
-    </Badge>
-  )
-}
-
-const FALSIFIED = { weight: 1, documents: 2, status: 4 }
-
-/** What was claimed, what the world saw, and what the contract decided. */
+/** What the invoice committed to, and what the check recorded onchain. */
 function EvidenceCard({ deal }: { deal: Deal }) {
-  const { claims, observed, evidence } = deal
-  if (!claims) return null
+  const { shipment, check } = deal
+  const unit = shipment.unit ? ` ${shipment.unit}` : ""
   const rows = [
     {
-      label: "Weight",
-      claimed: `${claims.declaredKg.toLocaleString("en-US")} kg`,
-      seen: observed ? `${observed.kg.toLocaleString("en-US")} kg` : "-",
-      source: evidence?.weighbridge.source,
-      bit: FALSIFIED.weight,
+      label: "Quantity",
+      agreed: `${shipment.quantity.toLocaleString("en-US")}${unit}`,
+      seen: check ? `${check.quantity.toLocaleString("en-US")}${unit}` : "-",
     },
     {
-      label: "Status",
-      claimed: SHIPMENT_STATUS[claims.status],
-      seen: observed ? SHIPMENT_STATUS[observed.status] : "-",
-      source: evidence?.tracking.source,
-      bit: FALSIFIED.status,
+      label: "Stage",
+      agreed: `At least ${STAGES[shipment.minimumStage]}`,
+      seen: check ? STAGES[check.stage] : "-",
     },
     {
       label: "Documents",
-      claimed: shortHash(claims.docHash),
-      seen: observed ? shortHash(observed.docHash) : "-",
-      source: evidence?.documents.source,
-      bit: FALSIFIED.documents,
+      agreed: shortHash(shipment.documentHash),
+      seen: check ? shortHash(check.documentHash) : "-",
     },
   ]
   return (
@@ -114,9 +86,12 @@ function EvidenceCard({ deal }: { deal: Deal }) {
       <CardHeader>
         <CardTitle>Evidence</CardTitle>
         <CardDescription>
-          The agent bought this check. {deal.checks}{" "}
-          {deal.checks === 1 ? "check" : "checks"} so far, container{" "}
-          {claims.containerNo}. The contract compares it with the claims.
+          {check
+            ? `Recorded by ${check.mode.replaceAll("_", " ").toLowerCase()}. Report ${shortHash(check.reportHash)}.`
+            : "Not checked yet."}
+          {deal.shipment.reference
+            ? ` Shipment ${deal.shipment.reference}.`
+            : ""}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -124,31 +99,16 @@ function EvidenceCard({ deal }: { deal: Deal }) {
           <TableHeader>
             <TableRow>
               <TableHead>Check</TableHead>
-              <TableHead>Claimed</TableHead>
-              <TableHead>Observed</TableHead>
-              <TableHead>Result</TableHead>
+              <TableHead>Agreed</TableHead>
+              <TableHead>Recorded</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.label}>
-                <TableCell>
-                  {row.label}
-                  {row.source ? (
-                    <span className="block text-xs text-muted-foreground">
-                      {row.source}
-                    </span>
-                  ) : null}
-                </TableCell>
-                <TableCell>{row.claimed}</TableCell>
+                <TableCell>{row.label}</TableCell>
+                <TableCell>{row.agreed}</TableCell>
                 <TableCell>{row.seen}</TableCell>
-                <TableCell>
-                  {observed ? (
-                    <Verdict ok={(deal.falsifiedMask & row.bit) === 0} />
-                  ) : (
-                    "-"
-                  )}
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -169,7 +129,7 @@ export function DealDetail({ role }: { role: Role }) {
         <EmptyHeader>
           <EmptyTitle>Deal not found</EmptyTitle>
           <EmptyDescription>
-            Deal {id} isn&apos;t on this chain.
+            Trade {id} isn&apos;t on Whitechain.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -178,13 +138,12 @@ export function DealDetail({ role }: { role: Role }) {
 
   const exporter = getParty(state, deal.exporterId)
   const importer = getParty(state, deal.importerId)
-  const percent = (deal.paid / deal.amount) * 100
   const terms = deal.terms
 
   return (
     <>
       <PageHeader
-        title={`Deal ${deal.id}: ${deal.goods}`}
+        title={`Trade ${deal.id}: ${deal.goods}`}
         description={`${exporter.name} to ${importer.name}`}
       >
         <StateBadge state={deal.state} />
@@ -197,22 +156,27 @@ export function DealDetail({ role }: { role: Role }) {
               <CardTitle>Deal terms</CardTitle>
               <CardDescription>
                 {deal.fundedAt
-                  ? "Frozen at funding. Later score changes never reprice this deal."
-                  : "Live from both scores. Frozen when an investor funds."}
+                  ? "Frozen at funding."
+                  : terms
+                    ? "The contract's live quote. Frozen when an investor funds."
+                    : "The contract quotes these once the shipment is verified."}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <dl className="flex flex-col gap-3">
                 <Row label="Invoice" value={usdt(deal.amount)} />
                 <Row label="Reference" value={deal.invoiceRef} />
-                <Row label="Due date" value={date(deal.dueAt)} />
+                <Row label="Offer expires" value={date(deal.expiry)} />
+                {deal.dueAt ? (
+                  <Row label="Due date" value={date(deal.dueAt)} />
+                ) : null}
                 <Separator />
                 <Row
                   label="Exporter Trust Score"
                   value={
                     <span className="flex items-center gap-2">
-                      {pct(exporter.trustBps)}
-                      <ScoreBadge view={exporterScoreView(exporter.trustBps)} />
+                      {exporter.score}
+                      <ScoreBadge view={exporterScoreView(exporter.score)} />
                     </span>
                   }
                 />
@@ -220,30 +184,25 @@ export function DealDetail({ role }: { role: Role }) {
                   label="Importer Risk Score"
                   value={
                     <span className="flex items-center gap-2">
-                      {pct(importer.riskBps)}
-                      <ScoreBadge view={importerScoreView(importer.riskBps)} />
+                      {importerScoreView(importer.score).value}
+                      <ScoreBadge view={importerScoreView(importer.score)} />
                     </span>
                   }
                 />
                 {terms ? (
                   <>
                     <Separator />
-                    <Row
-                      label="Advance"
-                      value={`${pct(terms.advanceBps)} (${usdt(terms.advance)})`}
-                    />
-                    <Row label="Platform fee" value={usdt(terms.fee)} />
-                    <Row
-                      label="Exporter receives now"
-                      value={usdt(terms.exporterNet)}
-                    />
-                    <Row
-                      label="Investor yield, per deal"
-                      value={`${pct(terms.yieldBps)} (${usdt(terms.yieldAmount)})`}
-                    />
+                    <Row label="Deal score" value={terms.score} />
+                    <Row label="Advance" value={usdt(terms.advance)} />
+                    <Row label="Investor profit" value={usdt(terms.profit)} />
                     <Row
                       label="Investor gets back"
                       value={usdt(terms.investorDue)}
+                    />
+                    <Row label="Platform fee" value={usdt(terms.fee)} />
+                    <Row
+                      label="Exporter gets at settlement"
+                      value={usdt(terms.exporterRemainder)}
                     />
                   </>
                 ) : null}
@@ -251,55 +210,26 @@ export function DealDetail({ role }: { role: Role }) {
             </CardContent>
           </Card>
           <EvidenceCard deal={deal} />
-          {deal.fundedAt ? (
+          {deal.investorId ? (
             <Card>
               <CardHeader>
-                <CardTitle>Repayment</CardTitle>
+                <CardTitle>Receivable</CardTitle>
                 <CardDescription>
-                  The investor is paid first, and the exporter gets the rest.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <Progress value={percent}>
-                  <ProgressLabel>Paid by the importer</ProgressLabel>
-                  <ProgressValue />
-                </Progress>
-                <dl className="flex flex-col gap-3">
-                  {deal.investorId ? (
-                    <Row
-                      label="Investor"
-                      value={getParty(state, deal.investorId).name}
-                    />
-                  ) : null}
-                  <Row
-                    label="Paid to the investor"
-                    value={usdt(deal.paidToInvestor)}
-                  />
-                  <Row
-                    label="Paid to the exporter"
-                    value={usdt(deal.paid - deal.paidToInvestor)}
-                  />
-                </dl>
-              </CardContent>
-            </Card>
-          ) : null}
-          {terms && deal.fundedAt ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Fee split</CardTitle>
-                <CardDescription>
-                  Taken at funding, in one transaction.
+                  Whoever holds the note is paid first on repayment.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <dl className="flex flex-col gap-3">
-                  <Row label="AI agent wallet" value={usdt(terms.agentFee)} />
-                  <Row label="Gas" value={usdt(terms.gasFee)} />
-                  <Row label="Reserve fund" value={usdt(terms.reserveFee)} />
                   <Row
-                    label="Platform profit"
-                    value={usdt(terms.platformFee)}
+                    label="Funded by"
+                    value={getParty(state, deal.investorId).name}
                   />
+                  {deal.holderId ? (
+                    <Row
+                      label="Repaid to"
+                      value={getParty(state, deal.holderId).name}
+                    />
+                  ) : null}
                 </dl>
               </CardContent>
             </Card>

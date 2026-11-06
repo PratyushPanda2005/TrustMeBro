@@ -1,50 +1,41 @@
 import type { Party } from "./types"
 
-/** Mirrors `TrustRegistry` and `DealMath`. The contract is always the source of truth. */
-export const BPS = 10_000
-export const MAX_ADVANCE_BPS = 9_000
-export const MIN_SCORE_BPS = 4_000
+/**
+ * Finance V2's source isn't in this repository, so these mirror what its live
+ * trades show. `quote()` on the contract is always the source of truth.
+ */
+export const STAGES = ["None", "Dispatched", "In transit", "Delivered"]
+const HAIRCUT = 0.97
+const YIELD = 0.03
+const FEE = 0.01
+
 export const VERIFY_PRICE = 0.3
-
-const MIN_FEE = 2
-const FEE_BPS = 100
-const RISK_MIN_BPS = 200
-const RISK_SPAN_BPS = 600
-
-export const SHIPMENT_STATUS = [
-  "None",
-  "Booked",
-  "Gated in",
-  "Loaded",
-  "Departed",
-  "Arrived",
-]
 
 export type ScoreView = {
   label: "Trust Score" | "Risk Score"
-  bps: number
+  value: number
   band: string
   tone: "good" | "neutral" | "bad"
 }
 
-/** Exporters: higher is better, and it sets the advance. */
-export function exporterScoreView(trustBps: number): ScoreView {
-  const tone =
-    trustBps >= 7_500 ? "good" : trustBps >= MIN_SCORE_BPS ? "neutral" : "bad"
+/** Exporters: higher is better. */
+export function exporterScoreView(score: number): ScoreView {
+  const tone = score >= 75 ? "good" : score >= 40 ? "neutral" : "bad"
   return {
     label: "Trust Score",
-    bps: trustBps,
-    band: { good: "High", neutral: "Medium", bad: "Blocked" }[tone],
+    value: score,
+    band: { good: "High", neutral: "Medium", bad: "Low" }[tone],
     tone,
   }
 }
 
-/** Importers: lower is better, and it's the investor's yield on the deal. */
-export function importerScoreView(riskBps: number): ScoreView {
-  const tone = riskBps <= 300 ? "good" : riskBps <= 500 ? "neutral" : "bad"
+/** Importers: lower is better, as the inverse of the contract's score. */
+export function importerScoreView(score: number): ScoreView {
+  const value = 100 - score
+  const tone = value <= 25 ? "good" : value <= 50 ? "neutral" : "bad"
   return {
     label: "Risk Score",
-    bps: riskBps,
+    value,
     band: { good: "Low risk", neutral: "Medium risk", bad: "High risk" }[tone],
     tone,
   }
@@ -52,31 +43,20 @@ export function importerScoreView(riskBps: number): ScoreView {
 
 export const partyScoreView = (party: Party) =>
   party.role === "exporter"
-    ? exporterScoreView(party.trustBps)
-    : importerScoreView(party.riskBps)
+    ? exporterScoreView(party.score)
+    : importerScoreView(party.score)
 
-/** For score history, which the contract records as trust. */
-export const riskFromTrust = (trustBps: number) =>
-  RISK_MIN_BPS + Math.round((RISK_SPAN_BPS * (BPS - trustBps)) / BPS)
-
-export const advanceFor = (trustBps: number) =>
-  trustBps < MIN_SCORE_BPS ? 0 : Math.min(trustBps, MAX_ADVANCE_BPS)
-
-/** A preview of `quote()` for an invoice that doesn't exist yet. */
-export function estimateTerms(
-  amount: number,
-  trustBps: number,
-  riskBps: number,
-) {
-  const advanceBps = advanceFor(trustBps)
-  const advance = (amount * advanceBps) / BPS
-  const fee = Math.max((advance * FEE_BPS) / BPS, MIN_FEE)
+/** A preview at a given deal score. The contract's own quote replaces it. */
+export function estimateTerms(amount: number, score: number) {
+  const advance = amount * (score / 100) * HAIRCUT
+  const profit = advance * YIELD
+  const fee = amount * FEE
+  const investorDue = advance + profit
   return {
-    advanceBps,
     advance,
+    profit,
     fee,
-    exporterNet: Math.max(advance - fee, 0),
-    yieldBps: riskBps,
-    investorDue: advance + (advance * riskBps) / BPS,
+    investorDue,
+    exporterRemainder: Math.max(amount - investorDue - fee, 0),
   }
 }

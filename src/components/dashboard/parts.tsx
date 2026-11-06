@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { partyScoreView, type ScoreView } from "@/lib/trade/score"
-import { pct, shortHash } from "@/lib/trade/format"
+import { shortHash } from "@/lib/trade/format"
 import type { DealState, Party, TxRef } from "@/lib/trade/types"
 
 export function PageHeader({
@@ -68,15 +68,11 @@ const stateVariant: Record<
   "default" | "secondary" | "destructive" | "outline"
 > = {
   Created: "outline",
-  Approved: "outline",
-  Claimed: "secondary",
-  Pending: "secondary",
+  Approved: "secondary",
   Verified: "default",
   Funded: "default",
   Settled: "default",
-  Mismatch: "outline",
-  Cancelled: "outline",
-  Expired: "outline",
+  Closed: "outline",
   Rejected: "destructive",
   Defaulted: "destructive",
 }
@@ -95,12 +91,12 @@ export function ScoreBadge({ view }: { view: ScoreView }) {
   return <Badge variant={toneVariant[view.tone]}>{view.band}</Badge>
 }
 
-/** "Trust Score 80.00% High" for an exporter, Risk Score for an importer. */
+/** "60 Medium" for an exporter, Risk Score for an importer. */
 export function PartyScore({ party }: { party: Party }) {
   const view = partyScoreView(party)
   return (
     <span className="flex items-center gap-2 whitespace-nowrap">
-      <span className="tabular-nums">{pct(view.bps)}</span>
+      <span className="tabular-nums">{view.value}</span>
       <ScoreBadge view={view} />
     </span>
   )
@@ -111,20 +107,12 @@ const explorers = {
   hedera: "https://hashscan.io/testnet/transaction/",
 }
 
-/** Local chain hashes have no public explorer, so only Hedera links by default. */
-export function TxHash({
-  tx,
-  live = tx.chain === "hedera",
-}: {
-  tx: TxRef
-  live?: boolean
-}) {
+export function TxHash({ tx }: { tx: TxRef }) {
   const text = (
     <code className="font-mono text-xs text-muted-foreground">
       {shortHash(tx.hash)}
     </code>
   )
-  if (!live) return text
   return (
     <Link href={`${explorers[tx.chain]}${tx.hash}`} target="_blank">
       {text}

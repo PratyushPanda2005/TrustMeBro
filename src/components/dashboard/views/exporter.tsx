@@ -36,7 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
-import { pct, usdt } from "@/lib/trade/format"
+import { usdt } from "@/lib/trade/format"
 import { exporterProfit } from "@/lib/trade/profit"
 import { estimateTerms, exporterScoreView } from "@/lib/trade/score"
 import { actions, getParty, useTrade } from "@/lib/trade/store"
@@ -53,12 +53,11 @@ const useExporter = () => {
 export function ExporterOverview() {
   const { state, profit } = useExporter()
   const exporter = getParty(state, state.personas.exporter)
-  const score = exporterScoreView(exporter.trustBps)
+  const score = exporterScoreView(exporter.score)
+  const last = profit.deals.find((deal) => deal.terms)
   const active = profit.deals.filter(
     (deal) =>
-      !["Settled", "Cancelled", "Rejected", "Mismatch", "Expired"].includes(
-        deal.state,
-      ),
+      !["Settled", "Closed", "Rejected", "Defaulted"].includes(deal.state),
   )
   return (
     <>
@@ -77,14 +76,14 @@ export function ExporterOverview() {
       <StatGrid>
         <StatCard
           label="Trust Score"
-          value={pct(score.bps)}
+          value={score.value}
           hint={score.band}
           icon={Gauge}
         />
         <StatCard
-          label="Next advance"
-          value={pct(exporter.advanceBps)}
-          hint={`${usdt(exporter.availableCredit)} of credit left`}
+          label="Latest deal score"
+          value={last?.terms?.score ?? "-"}
+          hint="Sets the advance"
           icon={HandCoins}
         />
         <StatCard
@@ -175,47 +174,72 @@ export function ExporterEarnings() {
   )
 }
 
+const emptyInvoice = {
+  invoiceNumber: "",
+  goods: "",
+  amount: "",
+  quantity: "",
+  unit: "kg",
+  shipmentReference: "",
+  issuer: "",
+  recordId: "",
+}
+
+const fields: {
+  key: keyof typeof emptyInvoice
+  label: string
+  hint?: string
+  type?: string
+}[] = [
+  {
+    key: "invoiceNumber",
+    label: "Invoice number",
+    hint: "Its hash is stored, so an invoice can't be financed twice.",
+  },
+  { key: "goods", label: "Goods" },
+  { key: "amount", label: "Amount (USDT)", type: "number" },
+  { key: "quantity", label: "Quantity", type: "number" },
+  { key: "unit", label: "Unit" },
+  { key: "shipmentReference", label: "Shipment reference" },
+  {
+    key: "issuer",
+    label: "Record issuer",
+    hint: "Who issued the shipping record.",
+  },
+  { key: "recordId", label: "Record ID" },
+]
+
 export function ExporterNewInvoice() {
   const state = useTrade()
   const router = useRouter()
+  const exporter = getParty(state, state.personas.exporter)
   const importers = state.parties
     .filter((party) => party.role === "importer")
     .map((party) => ({ value: party.id, label: party.name }))
-  const [form, setForm] = useState({
-    invoiceRef: "",
-    goods: "",
-    amount: "",
-    dueAt: "",
-    importerId: importers[0]?.value ?? "",
-  })
+  const [form, setForm] = useState(emptyInvoice)
+  const [importerId, setImporterId] = useState(importers[0]?.value ?? "")
   const [busy, setBusy] = useState(false)
   const set = (key: keyof typeof form) => (value: string) =>
     setForm((current) => ({ ...current, [key]: value }))
 
-  const exporter = getParty(state, state.personas.exporter)
-  const riskBps = form.importerId
-    ? getParty(state, form.importerId).riskBps
-    : 400
+  const importer = importerId ? getParty(state, importerId) : undefined
   const value = Number(form.amount) || 0
-  const terms = estimateTerms(value, exporter.trustBps, riskBps)
-  const overLimit = value > exporter.availableCredit
+  const latest = state.deals.find((deal) => deal.terms)?.terms?.score ?? 60
+  const terms = estimateTerms(value, latest)
+  const tooBig = importer ? value > importer.usdt : false
   const ready =
-    form.invoiceRef &&
-    form.goods &&
-    value >= 10 &&
-    !overLimit &&
-    form.dueAt &&
-    form.importerId
+    Object.values(form).every((item) => item.trim()) &&
+    value > 0 &&
+    Number(form.quantity) > 0 &&
+    importerId
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusy(true)
     const ok = await actions.createInvoice({
-      invoiceRef: form.invoiceRef,
-      goods: form.goods,
-      amount: value,
-      dueAt: Date.parse(`${form.dueAt}T09:00:00Z`),
-      importerId: form.importerId,
+      ...form,
+      exporter: exporter.id,
+      importer: importerId,
     })
     setBusy(false)
     if (ok) router.push("/dashboard/exporter/deals")
@@ -225,63 +249,35 @@ export function ExporterNewInvoice() {
     <>
       <PageHeader
         title="New invoice"
-        description="Nothing moves until the importer approves it onchain."
+        description="You sign this in your wallet. Nothing moves until the importer confirms it onchain."
       />
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardContent>
             <form onSubmit={submit}>
               <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="ref">Invoice reference</FieldLabel>
-                  <Input
-                    id="ref"
-                    value={form.invoiceRef}
-                    onChange={(event) => set("invoiceRef")(event.target.value)}
-                  />
-                  <FieldDescription>
-                    Its hash is stored, so an invoice can&apos;t be financed
-                    twice.
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="goods">Goods</FieldLabel>
-                  <Input
-                    id="goods"
-                    value={form.goods}
-                    onChange={(event) => set("goods")(event.target.value)}
-                  />
-                </Field>
-                <Field data-invalid={overLimit || undefined}>
-                  <FieldLabel htmlFor="amount">Amount (USDT)</FieldLabel>
-                  <Input
-                    id="amount"
-                    type="number"
-                    min="10"
-                    value={form.amount}
-                    aria-invalid={overLimit}
-                    onChange={(event) => set("amount")(event.target.value)}
-                  />
-                  <FieldDescription>
-                    {usdt(exporter.availableCredit)} of your credit limit is
-                    free.
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="due">Due date</FieldLabel>
-                  <Input
-                    id="due"
-                    type="date"
-                    value={form.dueAt}
-                    onChange={(event) => set("dueAt")(event.target.value)}
-                  />
-                </Field>
+                {fields.map((field) => (
+                  <Field key={field.key}>
+                    <FieldLabel htmlFor={field.key}>{field.label}</FieldLabel>
+                    <Input
+                      id={field.key}
+                      type={field.type}
+                      min={field.type ? "0" : undefined}
+                      step={field.key === "amount" ? "0.01" : undefined}
+                      value={form[field.key]}
+                      onChange={(event) => set(field.key)(event.target.value)}
+                    />
+                    {field.hint ? (
+                      <FieldDescription>{field.hint}</FieldDescription>
+                    ) : null}
+                  </Field>
+                ))}
                 <Field>
                   <FieldLabel>Importer</FieldLabel>
                   <Select
-                    value={form.importerId}
+                    value={importerId}
                     items={importers}
-                    onValueChange={(next) => next && set("importerId")(next)}
+                    onValueChange={(next) => next && setImporterId(next)}
                   >
                     <SelectTrigger aria-label="Importer" className="w-full">
                       <SelectValue />
@@ -296,6 +292,12 @@ export function ExporterNewInvoice() {
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                  {tooBig && importer ? (
+                    <FieldDescription>
+                      This importer holds {usdt(importer.usdt)}, so they
+                      couldn&apos;t repay this invoice.
+                    </FieldDescription>
+                  ) : null}
                 </Field>
                 <div>
                   <Button type="submit" disabled={!ready || busy}>
@@ -311,25 +313,26 @@ export function ExporterNewInvoice() {
           <CardHeader>
             <CardTitle>Estimated terms</CardTitle>
             <CardDescription>
-              Frozen when an investor funds, from both scores.
+              At deal score {latest}. The contract sets the real quote after
+              verification.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <p className="flex justify-between">
               <span className="text-muted-foreground">Advance</span>
-              {pct(terms.advanceBps)}
+              {usdt(terms.advance)}
+            </p>
+            <p className="flex justify-between">
+              <span className="text-muted-foreground">Investor profit</span>
+              {usdt(terms.profit)}
             </p>
             <p className="flex justify-between">
               <span className="text-muted-foreground">Platform fee</span>
               {usdt(terms.fee)}
             </p>
             <p className="flex justify-between">
-              <span className="text-muted-foreground">You receive first</span>
-              {usdt(terms.exporterNet)}
-            </p>
-            <p className="flex justify-between">
-              <span className="text-muted-foreground">Investor yield</span>
-              {pct(terms.yieldBps)}
+              <span className="text-muted-foreground">At settlement</span>
+              {usdt(terms.exporterRemainder)}
             </p>
           </CardContent>
         </Card>
