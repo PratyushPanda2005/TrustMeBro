@@ -1,66 +1,1130 @@
 /**
- * Minimal TradeDeals ABI the agent and dashboard rely on.
- * PROPOSED by lane B for the G0 freeze. Lane C replaces this with the ABI exported
- * from contracts/ (same names and types), and nothing else needs to change.
- *
- * Solidity shape:
- *   struct Verification { bytes32 dealId; bool weight; bool statusCode; bool documents; uint256 nonce; uint256 expiry; }
- *   event ShipmentDeclared(bytes32 indexed dealId, address indexed exporter, bool weight, bool statusCode, bool documents, string containerNo, string blRef);
- *   event VerificationApplied(bytes32 indexed dealId, bool matched, uint8 newState, uint256 exporterScoreBps);
- *   function submitVerification(Verification calldata v, bytes calldata signature) external;
- *   function verifier() external view returns (address);
- *   function dealState(bytes32 dealId) external view returns (uint8);
- *   States: 0 None 1 Created 2 Approved 3 Funding 4 Funded 5 Shipped 6 Released 7 Settled 8 Cancelled 9 Disputed 10 Expired 11 Defaulted
+ * TradeDeals ABI subset the agent and dashboard use, extracted from lane C's generated ABI
+ * (branch asish @ 1d82271, packages/shared/src/abi/tradeDeals.ts, made by contracts/script/export.mjs).
+ * Plan v5 §7. Do not edit by hand: re-extract when lane C changes the contract.
  */
+
+/** ITradeDeals.State */
 export const DEAL_STATE = {
-  None: 0, Created: 1, Approved: 2, Funding: 3, Funded: 4, Shipped: 5, Released: 6,
-  Settled: 7, Cancelled: 8, Disputed: 9, Expired: 10, Defaulted: 11,
+  None: 0, Created: 1, Approved: 2, Claimed: 3, Pending: 4, Verified: 5, Funded: 6,
+  Settled: 7, Rejected: 8, Mismatch: 9, Defaulted: 10, Expired: 11, Cancelled: 12,
 } as const;
 
-const VerificationTuple = {
-  type: "tuple",
-  name: "v",
-  components: [
-    { name: "dealId", type: "bytes32" },
-    { name: "weight", type: "bool" },
-    { name: "statusCode", type: "bool" },
-    { name: "documents", type: "bool" },
-    { name: "nonce", type: "uint256" },
-    { name: "expiry", type: "uint256" },
-  ],
-} as const;
+/** ITradeDeals.Outcome, returned by submitVerification */
+export const OUTCOME = { Verified: 0, Pending: 1, Falsified: 2, Mismatch: 3 } as const;
 
 export const tradeDealsAgentAbi = [
   {
-    type: "event",
-    name: "ShipmentDeclared",
-    inputs: [
-      { name: "dealId", type: "bytes32", indexed: true },
-      { name: "exporter", type: "address", indexed: true },
-      { name: "weight", type: "bool", indexed: false },
-      { name: "statusCode", type: "bool", indexed: false },
-      { name: "documents", type: "bool", indexed: false },
-      { name: "containerNo", type: "string", indexed: false },
-      { name: "blRef", type: "string", indexed: false },
+    "type": "function",
+    "name": "getDeal",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
     ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ITradeDeals.Deal",
+        "components": [
+          {
+            "name": "exporter",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "createdAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "state",
+            "type": "uint8",
+            "internalType": "enum ITradeDeals.State"
+          },
+          {
+            "name": "claimedStatus",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "checks",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "falsifiedMask",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "importer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "dueDate",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "declaredKg",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "amount",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "paid",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "invoiceHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "termsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "docHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "observedDocHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "claimTime",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "verifyDeadline",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "observedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "verifiedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "observedKg",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "observedStatus",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "verifyWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "listingWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "graceWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "advanceBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "yieldBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "fundedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "investor",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "closedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "advance",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "fee",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "investorDue",
+            "type": "uint128",
+            "internalType": "uint128"
+          },
+          {
+            "name": "paidToInvestor",
+            "type": "uint128",
+            "internalType": "uint128"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    type: "event",
-    name: "VerificationApplied",
-    inputs: [
-      { name: "dealId", type: "bytes32", indexed: true },
-      { name: "matched", type: "bool", indexed: false },
-      { name: "newState", type: "uint8", indexed: false },
-      { name: "exporterScoreBps", type: "uint256", indexed: false },
+    "type": "function",
+    "name": "getShipment",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
     ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ITradeDeals.Shipment",
+        "components": [
+          {
+            "name": "containerNo",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "blRef",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    type: "function",
-    name: "submitVerification",
-    stateMutability: "nonpayable",
-    inputs: [VerificationTuple, { name: "signature", type: "bytes" }],
-    outputs: [],
+    "type": "function",
+    "name": "hashVerification",
+    "inputs": [
+      {
+        "name": "v",
+        "type": "tuple",
+        "internalType": "struct ITradeDeals.Verification",
+        "components": [
+          {
+            "name": "dealId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "observedKg",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "statusCode",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "docHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "observedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "nonce",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "expiry",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
   },
-  { type: "function", name: "verifier", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-  { type: "function", name: "dealState", stateMutability: "view", inputs: [{ name: "dealId", type: "bytes32" }], outputs: [{ type: "uint8" }] },
+  {
+    "type": "function",
+    "name": "nonceUsed",
+    "inputs": [
+      {
+        "name": "nonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "submitVerification",
+    "inputs": [
+      {
+        "name": "v",
+        "type": "tuple",
+        "internalType": "struct ITradeDeals.Verification",
+        "components": [
+          {
+            "name": "dealId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "observedKg",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "statusCode",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "docHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "observedAt",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "nonce",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "expiry",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "outcome",
+        "type": "uint8",
+        "internalType": "enum ITradeDeals.Outcome"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "verifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "Claimed",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "exporter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "declaredKg",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "claimedStatus",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "docHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "containerNo",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "blRef",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "verifyDeadline",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Mismatch",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "declaredKg",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "observedKg",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Pending",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "checks",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "observedStatus",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "claimedStatus",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "verifyDeadline",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Rejected",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "exporter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "falsifiedMask",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "penalty",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "exporterScoreBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VerificationSubmitted",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "submitter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "nonce",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "sigHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "outcome",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum ITradeDeals.Outcome"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Verified",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "observedKg",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "statusCode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "docHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "observedAt",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "listingDeadline",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AccessControlBadConfirmation",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AccessControlUnauthorizedAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "neededRole",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AdvanceTooSmall",
+    "inputs": [
+      {
+        "name": "advance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "fee",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AlreadyKyced",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CreditLimitExceeded",
+    "inputs": [
+      {
+        "name": "exposure",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ECDSAInvalidSignature",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ECDSAInvalidSignatureLength",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ECDSAInvalidSignatureS",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721IncorrectOwner",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721InsufficientApproval",
+    "inputs": [
+      {
+        "name": "operator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721InvalidApprover",
+    "inputs": [
+      {
+        "name": "approver",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721InvalidOperator",
+    "inputs": [
+      {
+        "name": "operator",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721InvalidOwner",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721InvalidReceiver",
+    "inputs": [
+      {
+        "name": "receiver",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721InvalidSender",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC721NonexistentToken",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidAmount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidClaim",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDueDate",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDuration",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRole",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidShipmentRef",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidShortString",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidSigner",
+    "inputs": [
+      {
+        "name": "recovered",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidStatus",
+    "inputs": [
+      {
+        "name": "statusCode",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidToken",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidTrust",
+    "inputs": [
+      {
+        "name": "trustBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvoiceInUse",
+    "inputs": [
+      {
+        "name": "invoiceHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ListingClosed",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NoKyc",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NonceAlreadyUsed",
+    "inputs": [
+      {
+        "name": "nonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotKyced",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "required",
+        "type": "uint8",
+        "internalType": "enum ITradeDeals.Role"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotParty",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NothingOwed",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ObservationInFuture",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PastDueDate",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReceivableClosed",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RegistryNotBound",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RoleLocked",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "boundRole",
+        "type": "uint8",
+        "internalType": "enum ITradeDeals.Role"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ScoreTooLow",
+    "inputs": [
+      {
+        "name": "scoreBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SignatureExpired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SlippageExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StaleObservation",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StringTooLong",
+    "inputs": [
+      {
+        "name": "str",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TermsMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooEarly",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TransferRestricted",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnknownDeal",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "WrongState",
+    "inputs": [
+      {
+        "name": "dealId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "current",
+        "type": "uint8",
+        "internalType": "enum ITradeDeals.State"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroHash",
+    "inputs": []
+  }
 ] as const;
