@@ -57,7 +57,7 @@ contract Eip712RoundTripTest is BaseTest {
         vm.warp(v.observedAt - 100);
         vm.prank(ravi);
         uint256 id = td.createDeal(
-            100 * USDT, uint64(block.timestamp + TENOR), ahmed, keccak256("fixture invoice"), TERMS, _durations()
+            100 * USDT, uint64(vm.getBlockTimestamp() + TENOR), ahmed, keccak256("fixture invoice"), TERMS, _durations()
         );
         assertEq(bytes32(id), v.dealId, "fixture is for deal #1");
         vm.prank(ahmed);

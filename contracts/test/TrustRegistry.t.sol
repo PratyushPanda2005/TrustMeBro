@@ -112,7 +112,7 @@ contract TrustRegistryTest is Test {
     function test_importer_defaultFromStart() public {
         reg.addEvidence(importer, 1, 0, 30_000, TAG);
         assertEq(reg.trust(importer), 2_667); // 26.67%
-        assertEq(reg.riskBps(importer), 440); // 6.40%
+        assertEq(reg.riskBps(importer), 640); // 6.40%
     }
 
     function test_onlyDealsCanWrite() public {

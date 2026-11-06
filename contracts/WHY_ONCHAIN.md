@@ -56,7 +56,7 @@ Cheap, and they protect money or keep deals from getting stuck.
 |---|---|
 | Container no. / BL ref stored in the contract | Keep in the event only, or in the backend database |
 | Latest verifier reading stored in the deal | Keep in the event only; the frontend reads the event |
-| NFT metadata built in the contract (`tokenURI`) | A metadata link served by the backend |
+| ~~NFT metadata built in the contract (`tokenURI`)~~ **Removed** | The frontend shows the deal from `getDeal(id)` |
 | `revokeKyc`, custom importer starting trust, changing fee wallets | Admin extras, not needed for the demo |
 | Recovery payments after a default | Nice to have |
 | Fee-on-transfer check | Real USDT doesn't need it |
@@ -67,4 +67,4 @@ Tests, scripts and `packages/shared` never go onchain and cost no gas.
 
 ## Recommendation
 
-Keep everything in **Must** and **Should**. From **Optional**, the first candidates to remove are `tokenURI` (it also shrinks the contract, which matters if it's over the 24 KB deploy limit) and the stored container no. / BL ref. Decide after `forge build --sizes` and `forge test --gas-report` show the real size and gas numbers.
+Keep everything in **Must** and **Should**. Done on 2026-11-06: `tokenURI` was removed, because TradeDeals was only 79 bytes under the 24,576-byte limit. It is now 22,962 bytes (1,614 to spare) at `optimizer_runs = 200`. The stored container no. / BL ref stay: they are cheap and the verifier reads them from `getShipment(id)`.

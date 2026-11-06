@@ -9,8 +9,6 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 
 import {ITradeDeals} from "./interfaces/ITradeDeals.sol";
 import {TrustRegistry} from "./TrustRegistry.sol";
@@ -459,37 +457,6 @@ contract TradeDeals is ITradeDeals, ERC721, AccessControl, ReentrancyGuard, EIP7
         return _domainSeparatorV4();
     }
 
-    /// @notice Onchain metadata for the receivable NFT.
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        _requireOwned(tokenId);
-        Deal storage d = _deals[tokenId];
-        string memory attributes = string.concat(
-            '[{"trait_type":"State","value":"',
-            _stateName(d.state),
-            '"},{"trait_type":"Invoice (USDT units)","value":',
-            Strings.toString(d.amount),
-            '},{"trait_type":"Advance (USDT units)","value":',
-            Strings.toString(d.advance),
-            '},{"trait_type":"Investor due (USDT units)","value":',
-            Strings.toString(d.investorDue),
-            '},{"trait_type":"Paid to holder (USDT units)","value":',
-            Strings.toString(d.paidToInvestor),
-            '},{"trait_type":"Yield (bps)","value":',
-            Strings.toString(d.yieldBps),
-            '},{"display_type":"date","trait_type":"Due date","value":',
-            Strings.toString(d.dueDate),
-            "}]"
-        );
-        string memory json = string.concat(
-            '{"name":"TrustMeBro Receivable #',
-            Strings.toString(tokenId),
-            '","description":"Export-invoice receivable on TrustMeBro. The importer repays this contract in USDT; the holder is paid first (principal + yield). Transferable only between KYC-approved investors.","attributes":',
-            attributes,
-            "}"
-        );
-        return string.concat("data:application/json;base64,", Base64.encode(bytes(json)));
-    }
-
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
@@ -637,13 +604,6 @@ contract TradeDeals is ITradeDeals, ERC721, AccessControl, ReentrancyGuard, EIP7
 
     function _checkWindow(uint32 window) internal pure {
         if (window < MIN_WINDOW || window > MAX_WINDOW) revert InvalidDuration();
-    }
-
-    function _stateName(State s) internal pure returns (string memory) {
-        if (s == State.Funded) return "Funded";
-        if (s == State.Settled) return "Settled";
-        if (s == State.Defaulted) return "Defaulted";
-        return "Closed";
     }
 
     /// @dev Receivable NFTs go only to KYC'd investors, and only while Funded or Defaulted.

@@ -119,7 +119,7 @@ contract TradeDealsOriginationTest is BaseTest {
 
     function test_create_storesDeal() public {
         bytes32 inv = keccak256("INV-2026-001");
-        uint64 due = uint64(block.timestamp + TENOR);
+        uint64 due = uint64(vm.getBlockTimestamp() + TENOR);
 
         vm.expectEmit(address(deals));
         emit ITradeDeals.DealCreated(1, ravi, ahmed, 100 * USDT, due, inv, TERMS);
@@ -201,7 +201,7 @@ contract TradeDealsOriginationTest is BaseTest {
 
     function test_create_validation() public {
         vm.startPrank(ravi);
-        uint64 due = uint64(block.timestamp + TENOR);
+        uint64 due = uint64(vm.getBlockTimestamp() + TENOR);
 
         vm.expectRevert(ITradeDeals.InvalidAmount.selector);
         deals.createDeal(9 * USDT, due, ahmed, _nextInvoice(), TERMS, _durations());
@@ -213,10 +213,10 @@ contract TradeDealsOriginationTest is BaseTest {
         deals.createDeal(100 * USDT, due, ahmed, _nextInvoice(), bytes32(0), _durations());
 
         vm.expectRevert(ITradeDeals.InvalidDueDate.selector);
-        deals.createDeal(100 * USDT, uint64(block.timestamp), ahmed, _nextInvoice(), TERMS, _durations());
+        deals.createDeal(100 * USDT, uint64(vm.getBlockTimestamp()), ahmed, _nextInvoice(), TERMS, _durations());
 
         vm.expectRevert(ITradeDeals.InvalidDueDate.selector);
-        deals.createDeal(100 * USDT, uint64(block.timestamp + 731 days), ahmed, _nextInvoice(), TERMS, _durations());
+        deals.createDeal(100 * USDT, uint64(vm.getBlockTimestamp() + 731 days), ahmed, _nextInvoice(), TERMS, _durations());
 
         ITradeDeals.Durations memory bad = _durations();
         bad.verifyWindow = 59;
@@ -263,7 +263,7 @@ contract TradeDealsOriginationTest is BaseTest {
         uint256 id = _create(100 * USDT);
         _approve(id);
 
-        uint64 deadline = uint64(block.timestamp + VERIFY_WINDOW);
+        uint64 deadline = uint64(vm.getBlockTimestamp() + VERIFY_WINDOW);
         vm.expectEmit(address(deals));
         emit ITradeDeals.Claimed(id, ravi, 10_000, LOADED, DOC_A, "MSKU1234567", "BL-001", deadline);
         _claim(id, 10_000, LOADED, DOC_A);
@@ -272,7 +272,7 @@ contract TradeDealsOriginationTest is BaseTest {
         assertEq(d.declaredKg, 10_000);
         assertEq(d.claimedStatus, LOADED);
         assertEq(d.docHash, DOC_A);
-        assertEq(d.claimTime, block.timestamp);
+        assertEq(d.claimTime, vm.getBlockTimestamp());
         assertEq(d.verifyDeadline, deadline);
         _assertState(id, ITradeDeals.State.Claimed);
 
@@ -284,7 +284,8 @@ contract TradeDealsOriginationTest is BaseTest {
     function test_claims_requireApprovalFirst() public {
         uint256 id = _create(100 * USDT);
         vm.expectRevert(abi.encodeWithSelector(ITradeDeals.WrongState.selector, id, ITradeDeals.State.Created));
-        _claim(id, 10_000, LOADED, DOC_A);
+        vm.prank(ravi);
+        deals.declareClaims(id, 10_000, LOADED, DOC_A, "MSKU1234567", "BL-001");
     }
 
     function test_claims_validation() public {
@@ -319,9 +320,10 @@ contract TradeDealsOriginationTest is BaseTest {
     function test_claims_afterDueDate_revert() public {
         uint256 id = _create(100 * USDT);
         _approve(id);
-        vm.warp(block.timestamp + TENOR);
+        vm.warp(vm.getBlockTimestamp() + TENOR);
         vm.expectRevert(ITradeDeals.PastDueDate.selector);
-        _claim(id, 10_000, LOADED, DOC_A);
+        vm.prank(ravi);
+        deals.declareClaims(id, 10_000, LOADED, DOC_A, "MSKU1234567", "BL-001");
     }
 
     function test_cancel_importerDeclines() public {

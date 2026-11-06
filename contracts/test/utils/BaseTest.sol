@@ -119,16 +119,18 @@ abstract contract BaseTest is Test {
         returns (uint256 id)
     {
         vm.prank(exporter);
-        id = deals.createDeal(amount, uint64(block.timestamp + TENOR), importer, invoiceHash, TERMS, _durations());
+        id = deals.createDeal(amount, uint64(vm.getBlockTimestamp() + TENOR), importer, invoiceHash, TERMS, _durations());
     }
 
     function _approve(uint256 id) internal {
-        vm.prank(deals.getDeal(id).importer);
+        address importer_ = deals.getDeal(id).importer;
+        vm.prank(importer_);
         deals.approveDeal(id, TERMS);
     }
 
     function _claim(uint256 id, uint32 kg, uint8 status, bytes32 doc) internal {
-        vm.prank(deals.getDeal(id).exporter);
+        address exporter = deals.getDeal(id).exporter;
+        vm.prank(exporter);
         deals.declareClaims(id, kg, status, doc, "MSKU1234567", "BL-001");
     }
 
@@ -141,9 +143,9 @@ abstract contract BaseTest is Test {
             observedKg: kg,
             statusCode: status,
             docHash: doc,
-            observedAt: uint64(block.timestamp),
+            observedAt: uint64(vm.getBlockTimestamp()),
             nonce: nextNonce++,
-            expiry: block.timestamp + 10 minutes
+            expiry: vm.getBlockTimestamp() + 10 minutes
         });
     }
 
@@ -187,7 +189,7 @@ abstract contract BaseTest is Test {
 
     /// @dev Moves time forward 1s, then signs and submits an observation.
     function _check(uint256 id, uint32 kg, uint8 status, bytes32 doc) internal returns (ITradeDeals.Outcome) {
-        vm.warp(block.timestamp + 1);
+        vm.warp(vm.getBlockTimestamp() + 1);
         return _submit(_obs(id, kg, status, doc));
     }
 

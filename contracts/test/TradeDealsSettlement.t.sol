@@ -46,7 +46,7 @@ contract TradeDealsSettlementTest is BaseTest {
         assertEq(d.investorDue, 52 * USDT);
         assertEq(d.advanceBps, 5_000);
         assertEq(d.yieldBps, 400);
-        assertEq(d.fundedAt, block.timestamp);
+        assertEq(d.fundedAt, vm.getBlockTimestamp());
     }
 
     function test_fund_onlyKycInvestor() public {
@@ -103,7 +103,7 @@ contract TradeDealsSettlementTest is BaseTest {
     function test_fund_afterListingWindow_thenExpire() public {
         uint256 id = _verified(100 * USDT);
         bytes32 inv = deals.getDeal(id).invoiceHash;
-        vm.warp(block.timestamp + LISTING_WINDOW + 1);
+        vm.warp(vm.getBlockTimestamp() + LISTING_WINDOW + 1);
 
         vm.expectRevert(abi.encodeWithSelector(ITradeDeals.ListingClosed.selector, id));
         vm.prank(priya);
@@ -137,12 +137,12 @@ contract TradeDealsSettlementTest is BaseTest {
         taxed.approve(address(td), type(uint256).max);
 
         vm.prank(ravi);
-        uint256 id = td.createDeal(100 * USDT, uint64(block.timestamp + TENOR), ahmed, _nextInvoice(), TERMS, _durations());
+        uint256 id = td.createDeal(100 * USDT, uint64(vm.getBlockTimestamp() + TENOR), ahmed, _nextInvoice(), TERMS, _durations());
         vm.prank(ahmed);
         td.approveDeal(id, TERMS);
         vm.prank(ravi);
         td.declareClaims(id, 10_000, LOADED, DOC_A, "MSKU1234567", "");
-        vm.warp(block.timestamp + 1);
+        vm.warp(vm.getBlockTimestamp() + 1);
         ITradeDeals.Verification memory v = _obs(id, 10_000, LOADED, DOC_A);
         td.submitVerification(v, _signWith(verifierPk, _digest(v, address(td), block.chainid)));
 
@@ -189,12 +189,6 @@ contract TradeDealsSettlementTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(ITradeDeals.ReceivableClosed.selector, id));
         vm.prank(priya);
         deals.transferFrom(priya, kiran, id);
-    }
-
-    function test_nft_tokenUri_isOnchainJson() public {
-        uint256 id = _funded(100 * USDT);
-        string memory uri = deals.tokenURI(id);
-        assertEq(_prefix(uri, 29), "data:application/json;base64,");
     }
 
     function test_supportsInterfaces() public view {
@@ -317,7 +311,7 @@ contract TradeDealsSettlementTest is BaseTest {
 
         _assertState(id, ITradeDeals.State.Defaulted);
         assertEq(registry.trust(ahmed), 2_667, "importer 66.67% -> 26.67%");
-        assertEq(registry.riskBps(ahmed), 440, "risk jumps to 6.40%");
+        assertEq(registry.riskBps(ahmed), 640, "risk jumps to 6.40%");
         assertEq(registry.trust(ravi), 5_000, "exporter unchanged");
         assertEq(deals.openExposure(ravi), 0);
         assertEq(deals.settledVolume(ravi), 0, "no settlement credit");
@@ -358,7 +352,7 @@ contract TradeDealsSettlementTest is BaseTest {
 
     function test_markDefault_onSettled_reverts() public {
         uint256 id = _honestCycle(100 * USDT);
-        vm.warp(block.timestamp + TENOR + GRACE + 1);
+        vm.warp(vm.getBlockTimestamp() + TENOR + GRACE + 1);
         vm.expectRevert(abi.encodeWithSelector(ITradeDeals.WrongState.selector, id, ITradeDeals.State.Settled));
         deals.markDefault(id);
     }
@@ -430,14 +424,5 @@ contract TradeDealsSettlementTest is BaseTest {
         vm.expectRevert(ITradeDeals.ZeroAddress.selector);
         vm.prank(admin);
         deals.setFeeRecipients(r);
-    }
-
-    function _prefix(string memory s, uint256 n) internal pure returns (string memory) {
-        bytes memory b = bytes(s);
-        bytes memory out = new bytes(n);
-        for (uint256 i; i < n; ++i) {
-            out[i] = b[i];
-        }
-        return string(out);
     }
 }

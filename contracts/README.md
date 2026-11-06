@@ -77,7 +77,7 @@ Amounts are USDT units (6 decimals). Rates are bps (10,000 = 100%).
 
 Read: `getDeal(id)` (everything, including the latest observation and frozen terms), `getShipment(id)`,
 `quote(id)` (live terms; `advanceBps == 0` means the exporter is blocked), `deadlines(id)`, `ownerOf(id)` (current
-receivable holder), `tokenURI(id)`, `kycRole(addr)`, `creditLimit` / `availableCredit`, `registry.profile(addr)` →
+receivable holder; the NFT has no onchain metadata, so show its details from `getDeal(id)`), `kycRole(addr)`, `creditLimit` / `availableCredit`, `registry.profile(addr)` →
 `{onboarded, r, s, a, b, trustBps, advanceBps, riskBps}`.
 
 ### Agent (x402 relayer)

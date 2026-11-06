@@ -55,9 +55,9 @@ contract Deploy is Script {
     }
 
     /// @dev An empty `NAME=` line in .env counts as unset.
-    function _envAddressOr(string memory name, address fallback) internal view returns (address) {
+    function _envAddressOr(string memory name, address defaultValue) internal view returns (address) {
         string memory raw = vm.envOr(name, string(""));
-        return bytes(raw).length == 0 ? fallback : vm.parseAddress(raw);
+        return bytes(raw).length == 0 ? defaultValue : vm.parseAddress(raw);
     }
 
     function _writeDeployment(
