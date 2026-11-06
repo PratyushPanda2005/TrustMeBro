@@ -18,6 +18,7 @@
     "agent": "pnpm --filter @tmb/agent start",
     "associate-usdc": "pnpm --filter @tmb/audit associate-usdc",
     "e2e": "pnpm --filter @tmb/agent e2e",
+    "e2e:local": "pnpm --filter @tmb/agent e2e:local",
     "audit:verify": "pnpm --filter @tmb/audit verify"
   },
   "devDependencies": {

@@ -140,7 +140,7 @@ if (kind !== "console") {
     if (written.every((m) => onTopic.some((t) => t.hash === m.hash))) break;
     await sleep(3000);
   }
-  const found = onTopic.filter((t) => want.has(t.hash)).length;
+  const found = new Set(onTopic.filter((t) => want.has(t.hash)).map((t) => t.hash)).size; // an exact resend counts once
   const chainCheck = verifyChain(onTopic);
   const ok = found === written.length && chainCheck.ok;
   if (!ok) failed++;
