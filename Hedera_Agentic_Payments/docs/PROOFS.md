@@ -17,6 +17,24 @@ Each payment is a single `CRYPTOTRANSFER` of 300000 atomic units (0.30 USDC): `0
 | Agent runtime, mock chain: shipment → pay → relay (match → release) | `0.0.7162784@1793944165.975195850` | [view](https://hashscan.io/testnet/transaction/0.0.7162784@1793944165.975195850) |
 | Guardrail: $5.00 merchant, above the $1.00 per-call cap → `pending_human` | none (nothing paid; agent balance 39.4 → 38.8 USDC = the two rows above only) | n/a |
 
+### Plan v5 e2e (`pnpm e2e`): value claims, contract outcomes, rechecks, Option A records
+Plan v5 §3 steps 4–6 and §4 examples. Each case: a fresh exporter declares 10,000 kg / LOADED / docHash A → the agent pays `POST /verify` with `{dealId, shipmentRef}` only → the mock TradeDeals (TS mirror of lane C's `_judge` + `TrustRegistry`) decides → HCS via Agent Kit. All 7 cases + the HCS check passed, exit 0. Re-checked independently on the Mirror Node: six `CRYPTOTRANSFER SUCCESS` of 300000 each, agent USDC 34.9 → 33.1 (exactly 1.80); each relay message on topic `0.0.11336190` carries `hederaTxId`, `payer` `0.0.11331527`, `sigHash`, `whitechainTx` and the judged outcome.
+
+| Case | Hedera tx | Result |
+|---|---|---|
+| honest | [`0.0.7162784@1793957339.087885327`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957339.087885327) | PASS: 9,850 kg / DEPARTED / hash A → Verified; score stays 50.00% until settlement, then 66.67% (mock settlement) |
+| lag | [`0.0.7162784@1793957353.389240010`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957353.389240010)<br>[`0.0.7162784@1793957365.680173072`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957365.680173072) | PASS: GATED_IN → Pending, recheck DEPARTED → Verified; two checks (0.60), no penalty |
+| short-weight | [`0.0.7162784@1793957378.179920972`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957378.179920972) | PASS: 8,020 of 10,000 kg → Rejected; only the exporter drops 50.00% → 26.32% |
+| fake-docs | [`0.0.7162784@1793957393.422252673`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957393.422252673) | PASS: doc hash B ≠ A → Rejected; only the exporter drops 50.00% → 27.03% |
+| under-declared | [`0.0.7162784@1793957403.924508502`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957403.924508502) | PASS: 9,000 claimed, 9,850 observed → Mismatch; no penalty |
+| overcharge | none | PASS: 5.00 quote held for a human; nothing paid, nothing relayed |
+| outage | none | PASS: 503, nothing paid, no penalty |
+| HCS audit | [`0.0.11336190`](https://hashscan.io/testnet/topic/0.0.11336190) | PASS: 23/23 messages of the run on the topic via Agent Kit (#20–#42), chain intact |
+
+`pnpm agent:once` with the v5 request: [`0.0.7162784@1793957467.785080332`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957467.785080332) (observed 9,850 kg, status 4, signed `observedAt`).
+
+The sections below are earlier runs under plan v4 (true/false claims), kept as history.
+
 ### G1 soak: repeated, concurrent and scenario runs (`pnpm agent:once`)
 Agent USDC 38.8 → 37.0, verifier 41.2 → 43.0: exactly the six 0.30 transfers below, all `SUCCESS` on the mirror node. Nothing else moved.
 
@@ -32,7 +50,7 @@ Agent USDC 38.8 → 37.0, verifier 41.2 → 43.0: exactly the six 0.30 transfers
 | E bait and switch: retry quotes 0.90 or another payTo | none | refused before signing (pin check in `payer.ts`) |
 | F admin endpoint with a wrong token | none | 401 |
 
-### `pnpm e2e`: Hedera e2e cases (B7), one live verifier, scenario switched per deal
+### Plan v4: `pnpm e2e` Hedera e2e cases (B7), one live verifier, scenario switched per deal
 4/4 PASS. Each case checked the agent's USDC balance on the Mirror Node.
 
 | Case | Hedera tx | Result |
@@ -42,12 +60,26 @@ Agent USDC 38.8 → 37.0, verifier 41.2 → 43.0: exactly the six 0.30 transfers
 | e2e:overcharge | none | PASS: 5.00 quote held for a human, nothing paid |
 | e2e:outage | none | PASS: data source down: 503, not settled, nothing paid |
 
-## HCS audit topic
-| Topic ID | HashScan |
-|---|---|
-| `0.0.11334995` (submit key = audit operator) | [view](https://hashscan.io/testnet/topic/0.0.11334995) |
+### Plan v4: `pnpm e2e` v2, full agent flow + Trust Scores + HCS via Hedera Agent Kit
+Plan §3 steps 5–7: a fresh exporter declares all-true claims → the agent pays `POST /verify` over x402 → relays → the contract (mock TradeDeals, shared TS mirror of the Solidity maths) judges → Trust Score moves (§4.2) → every step goes to HCS through **Hedera Agent Kit** `submit_topic_message_tool`. All passed, exit 0. Re-checked independently on the Mirror Node: both payments `CRYPTOTRANSFER SUCCESS` (agent −300000, verifier +300000); every topic message paid by the audit operator `0.0.11331562`; the relay messages carry the score move.
 
-`pnpm audit:verify` → `10 messages on 0.0.11334995: ✅ chain intact` (rows 8–10: mock agent run with the audit outbox, after the e2e cases):
+| Case | Hedera tx | Result |
+|---|---|---|
+| e2e:happy | [`0.0.7162784@1793952840.027565805`](https://hashscan.io/testnet/transaction/0.0.7162784@1793952840.027565805) | PASS: paid 0.30, verified, released; exporter 50.00% → 66.66% (HCS #13: `trust released 5000→6666`) |
+| e2e:cheat | [`0.0.7162784@1793952848.799216642`](https://hashscan.io/testnet/transaction/0.0.7162784@1793952848.799216642) | PASS: paid 0.30, weight falsified, disputed; only the exporter drops 50.00% → 26.31% (HCS #16: `trust disputed 5000→2631`) |
+| e2e:overcharge | none | PASS: 5.00 quote held for a human, nothing paid, score unchanged |
+| e2e:outage | none | PASS: 503, nothing paid, no penalty (score unchanged) |
+| HCS audit | [`0.0.11336190`](https://hashscan.io/testnet/topic/0.0.11336190) | PASS: 10/10 messages of the run on the topic via Agent Kit, 20 in total, chain intact |
+
+An earlier identical run (txs `…1793952163.815017350`, `…1793952177.410338143`, HCS #1–#10) also passed.
+
+## HCS audit topic
+| Topic ID | Created by | HashScan |
+|---|---|---|
+| `0.0.11336190` (current; submit key = audit operator, memo "TrustMeBro agent spend audit") | **Hedera Agent Kit** `create_topic_tool`, tx [`0.0.11331562@1793951843.444750109`](https://hashscan.io/testnet/transaction/0.0.11331562@1793951843.444750109) | [view](https://hashscan.io/testnet/topic/0.0.11336190) |
+| `0.0.11334995` (first topic, plain `@hiero-ledger/sdk`) | `pnpm --filter @tmb/audit create-topic` before Agent Kit | [view](https://hashscan.io/testnet/topic/0.0.11334995) |
+
+First topic, `pnpm audit:verify` → `10 messages on 0.0.11334995: ✅ chain intact` (rows 8–10: mock agent run with the audit outbox, after the e2e cases):
 
 | Seq (HashScan) | Kind | Note |
 |---|---|---|

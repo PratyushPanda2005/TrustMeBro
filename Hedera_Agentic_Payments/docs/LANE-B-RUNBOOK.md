@@ -1,11 +1,11 @@
-# Lane B runbook: agent · x402 · Hedera · Trust Code
+# Lane B runbook: agent · x402 · Hedera · Trust Code (plan v5)
 
 Run these in order on a dev machine (Node ≥ 20, pnpm 10). Each step ends with a proof link → `docs/PROOFS.md`.
 
 ## 0. Install + unit tests (no network needed after install)
 ```bash
 pnpm install
-pnpm -r test          # shared 27 · verifier 9 · agent 30 · audit 8
+pnpm -r test          # shared 25 · verifier 16 · audit 18 · agent 50
 pnpm -r typecheck
 pnpm --filter @tmb/shared fixtures   # viem-signed samples for lane C → packages/shared/fixtures/
 ```
@@ -29,10 +29,11 @@ Paste the tx ID into README "Payment flow" and `docs/PROOFS.md`.
 ```bash
 pnpm --filter @tmb/audit create-topic   # prints AUDIT_TOPIC_ID + HashScan link → .env
 ```
+The topic is created and written through **Hedera Agent Kit** v4 (`create_topic_tool`, `submit_topic_message_tool`, run from code, no LLM), with the submit key set to the operator key. The kit instance has only those two tools, so it can't move money. Set `AUDIT_SINK=sdk` to fall back to plain `@hiero-ledger/sdk`. Each topic keeps its own chain tail in `services/agent/.state/audit-tail-<topic>.json`, so a new topic starts at seq 0.
 
 ## 4. Agent in mock mode (before lane C deploys)
 ```bash
-CHAIN_ADAPTER=mock pnpm agent   # emits one demo shipment → pays → "relayed" (mock) → HCS messages
+CHAIN_ADAPTER=mock pnpm agent   # the demo exporter claims 10,000 kg / LOADED / hash A → agent pays → mock TradeDeals: Verified → HCS
 pnpm audit:verify               # "✅ chain intact"
 ```
 If HCS is unreachable, audit messages wait in `services/agent/.state/audit-tail-outbox.json` and go out, in order, with the next write. The chain never gets a gap.
@@ -48,36 +49,51 @@ Add `"dealId":"0x…"` to apply a scenario to one deal only. `OVERCHARGE_PRICE` 
 ## 4b. Hedera e2e (B7, no Whitechain needed)
 ```bash
 pnpm verifier      # terminal 1
-pnpm e2e           # terminal 2: happy · cheat · overcharge · outage, or `pnpm e2e outage` for one
+pnpm e2e           # terminal 2: all 7 cases, or `pnpm e2e short-weight` for one
 ```
-Each case runs on a fresh deal and checks the agent's real USDC balance on the Mirror Node. It prints PASS/FAIL and rows for `docs/PROOFS.md`. `cheat` here proves the verifier reports the falsified weight; the contract-side result (only the exporter drops) is G2.
+Each case runs the agent's whole flow (plan v5 §3 steps 4–6): a fresh exporter (50.00%) declares the demo claim 10,000 kg / LOADED / docHash A → the agent pays `POST /verify` with only `{dealId, shipmentRef}` → relays to the mock TradeDeals, which judges like lane C's contract → `Pending` is rechecked as the next check (max 3) → HCS via Agent Kit. It checks the agent's real USDC balance and the topic messages on the Mirror Node, and prints PASS/FAIL plus rows for `docs/PROOFS.md`.
+
+| Case | Verifier observes (plan v5 §4) | Contract | Charged | Exporter score |
+|---|---|---|---|---|
+| `honest` | 9,850 kg, DEPARTED, hash A | Verified | 0.30 | 50.00% (66.67% once the deal settles) |
+| `lag` | GATED_IN, then DEPARTED on the recheck | Pending → Verified | 0.60 | 50.00% |
+| `short-weight` | 8,020 kg | Rejected | 0.30 | 26.32% |
+| `fake-docs` | hash B | Rejected | 0.30 | 27.03% |
+| `under-declared` | 9,850 kg vs a 9,000 kg claim | Mismatch | 0.30 | 50.00% |
+| `overcharge` | 5.00 quote | — (pending_human) | 0 | 50.00% |
+| `outage` | 503 | — | 0 | 50.00% |
+
+The full run costs 1.80 USDC; the agent's daily cap is 10.00.
 
 `deployments/hedera-testnet.json` holds the public Hedera side (accounts, topic, facilitator, verifier signer) for lane A. Update it if you recreate accounts or the topic.
 
-## 5. G2: real Whitechain relay (after lane C's v2)
-Set `TRADE_DEALS_ADDRESS`, `RELAYER_PRIVATE_KEY` (holds WBT), `WHITECHAIN_FROM_BLOCK`, then:
+## 5. G2: real Whitechain relay (lane C's TradeDeals deployed)
+Lane C deploys with `verifier_ = <address of VERIFIER_EVM_PRIVATE_KEY>`. Then set `TRADE_DEALS_ADDRESS` (verifier and agent both read it: it is the EIP-712 `verifyingContract`), `RELAYER_PRIVATE_KEY` (holds WBT), `WHITECHAIN_FROM_BLOCK`, restart the verifier and run:
 ```bash
 CHAIN_ADAPTER=whitechain pnpm agent
 ```
-Lane C (or the dashboard) declares a shipment → the agent pays on Hedera → relays → Released/Disputed on the explorer.
+The exporter calls `declareClaims` → the agent sees `Claimed` → pays on Hedera → `submitVerification` (simulated first) → Verified / Pending / Rejected / Mismatch on the explorer. Rechecks wait `RECHECK_DELAY_SEC` (default 20).
 Scenario switch for the cheat run:
 ```bash
 curl -X POST localhost:4021/admin/scenario -H 'x-admin-token: <VERIFIER_ADMIN_TOKEN>' -H 'content-type: application/json' \
-  -d '{"scenario":"fake-weight","dealId":"0x…"}'
+  -d '{"scenario":"short-weight","dealId":"0x<uint256 deal id as 32-byte hex>"}'
 ```
+Scenarios: `honest`, `lag`, `short-weight`, `fake-docs`, `overcharge`, `outage`. Under-declared is the exporter's side: declare less than 9,850 kg / 1.03.
 
-## Interfaces lane C must match (G0)
-- `packages/shared/src/abi.ts`: `ShipmentDeclared`, `submitVerification(Verification, bytes)`, `verifier()`, `dealState()`. Lane C replaces it with the real ABI using the same names.
-- `packages/shared/src/eip712.ts`: type string + domain `{TrustMeBro, 1, 1874, TradeDeals}`.
-- `packages/shared/vectors/trust.json`: Trust Score / terms / waterfall golden values.
+## Interfaces with lane C (plan v5 is binding; lane C's contracts are the reference)
+- `packages/shared/src/abi.ts`: subset extracted from lane C's generated ABI (`Claimed`, `submitVerification(Verification, bytes) → Outcome`, `getDeal`, `verifier`, events, all custom errors). Re-extract when the contract changes.
+- `packages/shared/src/eip712.ts`: `Verification(bytes32 dealId,uint32 observedKg,uint8 statusCode,bytes32 docHash,uint64 observedAt,uint256 nonce,uint256 expiry)`, domain `{TrustMeBro, 1, 1874, TradeDeals}`. `test/sign.test.ts` reproduces lane C's own signed fixture byte for byte.
+- `packages/shared/src/trust.ts`: TS mirror of `TrustRegistry`, `_judge`, `_scoreSettlement`, `DealMath`; `vectors/trust.json` has the plan v5 §4–6 values.
+- `packages/shared/src/demo.ts`: the demo container's doc hash A / forged hash B, shared by the exporter side and the verifier.
 
 ## What's verified where
 | Check | Here (unit) | Live |
 |---|---|---|
-| Trust maths, terms, waterfall | ✅ 27 tests | parity vs `TrustRegistry` once deployed |
-| Spending gate, ledger, approvals API | ✅ | approve button via dashboard |
-| x402 header parsing, purchase pipeline (fakes) | ✅ | `agent:once` on Hedera testnet |
-| Verifier handler (400/503/signed) | ✅ | x402 paywall via Blocky402 |
-| Audit hash chain + mirror decoding | ✅ | `audit verify` on the real topic |
-| EIP-712 viem sign/recover | skipped without viem | `pnpm -r test` after install |
-| Whitechain adapter | — | G2 run |
+| Score / advance / risk / fee / waterfall (plan v5 §5–6 tables) | ✅ | parity vs `TrustRegistry` once deployed |
+| EIP-712 v5 sign / recover | ✅ byte-identical to lane C's fixture | `forge test` on lane C's side |
+| `_judge` mirror: §4 examples, ±3% edges, deadline | ✅ | G2 run |
+| Spending gate v5 (3 checks / 1.00 per deal, 5 per exporter per day), ledger, approvals API | ✅ | approve button via dashboard |
+| x402 header parsing, pinned payment, purchase pipeline | ✅ | `agent:once`, `pnpm e2e` on Hedera testnet |
+| Verifier scenarios, 400 for a body with claims, 503 | ✅ | x402 paywall via Blocky402 |
+| Audit hash chain, outbox, Agent Kit sink | ✅ | `pnpm audit:verify` on the real topic |
+| Whitechain adapter | typecheck against lane C's ABI | G2 run |
