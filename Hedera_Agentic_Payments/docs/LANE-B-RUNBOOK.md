@@ -5,7 +5,7 @@ Run these in order on a dev machine (Node ≥ 20, pnpm 10). Each step ends with 
 ## 0. Install + unit tests (no network needed after install)
 ```bash
 pnpm install
-pnpm -r test          # shared 25 · verifier 16 · audit 18 · agent 50
+pnpm -r test          # shared 29 · verifier 16 · audit 18 · agent 53
 pnpm -r typecheck
 pnpm --filter @tmb/shared fixtures   # viem-signed samples for lane C → packages/shared/fixtures/
 ```
@@ -66,6 +66,17 @@ Each case runs the agent's whole flow (plan v5 §3 steps 4–6): a fresh exporte
 The full run costs 1.80 USDC; the agent's daily cap is 10.00.
 
 `deployments/hedera-testnet.json` holds the public Hedera side (accounts, topic, facilitator, verifier signer) for lane A. Update it if you recreate accounts or the topic.
+
+## 4c. Against lane C's verifier and local chain
+Lane C's verifier reads each deal's claim from TradeDeals and signs in their response format (`domain` nested, `sigHash`, `expected`, `evidence`). The agent accepts exactly that format and checks deal, chain, contract, `sigHash = keccak256(signature)` and signer; it ignores `expected` (the contract decides) and never forwards `evidence` to HCS. Needs Foundry (`forge build` in `contracts/`).
+```bash
+cd services/verifier            # at the repo root (lane C)
+npm ci && PAYMENTS=on VERIFIER_PAYTO=0.0.11331478 npm run local     # anvil 31337 + contracts + verifier on :4021
+npm run claim -- MSKU1234567 honest                                  # → "Deal 1 claimed"
+cd ../../Hedera_Agentic_Payments
+CHAIN_ADAPTER=local pnpm agent:once 1                                # reads deal 1, pays on Hedera, checks the signed answer
+```
+`CHAIN_ADAPTER=local` takes TradeDeals, chain id, verifier address and the relayer key from `services/verifier/local-deployment.json` (`LOCAL_DEPLOYMENT` overrides the path). Stop our own verifier first: both use port 4021.
 
 ## 5. G2: real Whitechain relay (lane C's TradeDeals deployed)
 Lane C deploys with `verifier_ = <address of VERIFIER_EVM_PRIVATE_KEY>`. Then set `TRADE_DEALS_ADDRESS` (verifier and agent both read it: it is the EIP-712 `verifyingContract`), `RELAYER_PRIVATE_KEY` (holds WBT), `WHITECHAIN_FROM_BLOCK`, restart the verifier and run:

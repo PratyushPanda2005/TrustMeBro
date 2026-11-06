@@ -17,6 +17,13 @@ Each payment is a single `CRYPTOTRANSFER` of 300000 atomic units (0.30 USDC): `0
 | Agent runtime, mock chain: shipment → pay → relay (match → release) | `0.0.7162784@1793944165.975195850` | [view](https://hashscan.io/testnet/transaction/0.0.7162784@1793944165.975195850) |
 | Guardrail: $5.00 merchant, above the $1.00 per-call cap → `pending_human` | none (nothing paid; agent balance 39.4 → 38.8 USDC = the two rows above only) | n/a |
 
+### Integration with lane C, step 1: the agent pays lane C's verifier (`CHAIN_ADAPTER=local pnpm agent:once <dealId>`)
+Lane C's own stack (`npm run local` in `services/verifier` at the repo root, `PAYMENTS=on VERIFIER_PAYTO=0.0.11331478`): anvil 31337, their TradeDeals `0x9fE4…a6e0`, their verifier reading the deal from the chain. `npm run claim -- MSKU1234567 honest` made deal 1 (10,000 kg, LOADED). The agent read the claim from TradeDeals, sent only `{dealId, shipmentRef}`, paid over x402, and accepted the response only after checking it was signed by `0xa0Ee…9720` for chain 31337, that TradeDeals and that deal, with `sigHash = keccak256(signature)`. Lane C's verifier logged the same tx as settled with payer `0.0.11331527`; the Mirror Node shows `CRYPTOTRANSFER SUCCESS`, `0.0.11331527` −300000, `0.0.11331478` +300000.
+
+| What | Hedera tx | Result |
+|---|---|---|
+| deal 1, honest | [`0.0.7162784@1793962630.360869930`](https://hashscan.io/testnet/transaction/0.0.7162784@1793962630.360869930) | PASS: observed 9,850 kg, status 4 (DEPARTED), signed for chain 31337; the verifier's forecast "Verified" is shown but ignored (the contract decides) |
+
 ### Plan v5 e2e (`pnpm e2e`): value claims, contract outcomes, rechecks, Option A records
 Plan v5 §3 steps 4–6 and §4 examples. Each case: a fresh exporter declares 10,000 kg / LOADED / docHash A → the agent pays `POST /verify` with `{dealId, shipmentRef}` only → the mock TradeDeals (TS mirror of lane C's `_judge` + `TrustRegistry`) decides → HCS via Agent Kit. All 7 cases + the HCS check passed, exit 0. Re-checked independently on the Mirror Node: six `CRYPTOTRANSFER SUCCESS` of 300000 each, agent USDC 34.9 → 33.1 (exactly 1.80); each relay message on topic `0.0.11336190` carries `hederaTxId`, `payer` `0.0.11331527`, `sigHash`, `whitechainTx` and the judged outcome.
 
