@@ -1,0 +1,75 @@
+TrustMeBro smart contracts: what each file does
+================================================
+
+THE CONTRACTS (contracts/src/) - these get deployed to Whitechain
+-------------------------------------------------------------------
+TradeDeals.sol            The main contract. Holds every deal and runs the whole flow:
+                            KYC -> create invoice -> importer approves -> exporter claims shipment
+                            -> verifier's signed check -> investor funds in USDT -> importer pays.
+                          It also takes the USDT, splits the 1% fee, pays the exporter, and mints
+                          the receivable NFT (one NFT per funded deal, only KYC'd investors can hold it).
+
+TrustRegistry.sol         Stores the Trust Score of every exporter and importer.
+                          Only TradeDeals can change a score. Nobody (not even admin) can set one directly.
+                          Gives: trust %, advance % (for exporters), risk % = investor yield (for importers).
+
+libraries/DealMath.sol    Pure maths, no storage: advance amount, 1% fee and its split
+                          (agent / gas / reserve / platform), investor yield, and the
+                          "investor first, exporter the rest" payment split.
+
+interfaces/ITradeDeals.sol  The list of everything outside code needs: deal states, roles,
+                          the Deal struct, events, and error names. Not deployed by itself.
+
+Deployed contracts: only TradeDeals and TrustRegistry (DealMath is built into TradeDeals).
+
+
+SCRIPTS (contracts/script/) - run from the terminal
+-----------------------------------------------------
+Deploy.s.sol              Deploys TrustRegistry + TradeDeals to Whitechain and verifies them on the
+                          explorer. Saves the addresses to contracts/deployments/1874.json.
+Kyc.s.sol                 Admin step after deploy: KYCs the exporter, importer and investor wallets.
+export.mjs                Copies the contract ABIs and deployed addresses into packages/shared
+                          so the frontend and agent can use them.
+
+
+TESTS (contracts/test/) - prove the contracts follow the plan; never deployed
+------------------------------------------------------------------------------
+TrustRegistry.t.sol           Score numbers from plan section 5 (50% -> 66.67% -> 75%..., liar drops to 26.32%...).
+DealMath.t.sol                Money numbers from plan section 6 (70,000 / 700 fee / 69,300 / 72,800...).
+TradeDealsOrigination.t.sol   KYC, create invoice, credit limit, approve, claims, cancel.
+TradeDealsVerification.t.sol  Signature security + the weight / documents / status checks.
+TradeDealsExtras.t.sol        deadlines(), NFT safeTransferFrom / operator rules, extra KYC admins, EIP-712 domain.
+TradeDealsSettlement.t.sol    Funding, fee split, NFT transfer rules, repayment, late pay, default, expiry.
+Eip712RoundTrip.t.sol         Checks that a signature made in TypeScript is accepted by the contract.
+utils/BaseTest.sol            Shared setup for the tests (deploys, KYCs test wallets, gives them mock USDT).
+mocks/MockUSDT.sol            Fake USDT used only inside tests.
+
+
+CONFIG (contracts/)
+--------------------
+foundry.toml      Compiler settings (solc 0.8.30, prague) and the Whitechain RPC. Don't change after deploy.
+remappings.txt    Tells the compiler where OpenZeppelin and forge-std are.
+package.json      Library versions (OpenZeppelin 5.4.0, forge-std 1.9.7). Installed with "npm install".
+.env.example      Settings for deploy (verifier address, fee wallets, KYC wallets). Copy to .env.
+.gitignore        Keeps build output, node_modules and .env out of git.
+README.md         Full integration guide for the frontend and agent teammates.
+BACKEND_GUIDE.md  Simple guide for the verifier and agent teammates: what to sign, what to send, what each result means.
+REQUIREMENTS.txt  What to install and how to build, test and deploy.
+WHY_ONCHAIN.md    Which features must be in Solidity, which could move to the backend, and the gas cost.
+
+
+SHARED CODE (packages/shared/) - imported by the frontend and the agent
+--------------------------------------------------------------------------
+src/chain.ts        Whitechain network settings (chain id 1874, RPC, explorer links).
+src/constants.ts    USDT address, deal states, roles and shipment status numbers.
+src/eip712.ts       The exact format the verifier must sign. If it differs from the contract, checks fail.
+src/abi/            Contract ABIs (TradeDeals + TrustRegistry are added by export.mjs after build).
+src/deployments.ts  Deployed addresses (filled by export.mjs after deploy).
+scripts/eip712-fixture.ts  Makes a test signature for Eip712RoundTrip.t.sol.
+
+
+HOW IT FITS TOGETHER
+---------------------
+  Frontend / Agent ---(calls)---> TradeDeals ---(updates scores)---> TrustRegistry
+                                      |
+                                      +---(moves)---> USDT 0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7
