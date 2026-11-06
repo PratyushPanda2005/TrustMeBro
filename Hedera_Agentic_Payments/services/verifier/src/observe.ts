@@ -5,7 +5,7 @@
  */
 import type { Checks, Verification, Hex } from "@tmb/shared";
 
-export const SCENARIOS = ["honest", "fake-weight", "fake-status", "fake-docs", "outage"] as const;
+export const SCENARIOS = ["honest", "fake-weight", "fake-status", "fake-docs", "outage", "overcharge"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 export function isScenario(x: unknown): x is Scenario {
@@ -38,6 +38,21 @@ export function observe(s: Exclude<Scenario, "outage"> | Scenario): Checks {
     statusCode: s !== "fake-status",
     documents: s !== "fake-docs",
   };
+}
+
+/**
+ * x402 price for a request. `overcharge` is a greedy merchant: honest data, 5.00 instead of
+ * 0.30, so the agent's spending gate must stop it (pending_human). Same scenario on the probe
+ * and the paid retry, so the quote the agent approves is the one it is asked to sign.
+ */
+export function priceFor(s: Scenario, normal: string, overcharge: string): string {
+  return s === "overcharge" ? overcharge : normal;
+}
+
+/** dealId from a parsed JSON body, or "" (default scenario) for anything malformed. */
+export function dealIdOf(body: unknown): string {
+  const id = (body as { dealId?: unknown } | null | undefined)?.dealId;
+  return typeof id === "string" ? id : "";
 }
 
 /** Strictly increasing nonces (ms clock × 1000 + counter), unique per verifier key. */

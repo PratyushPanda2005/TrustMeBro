@@ -17,7 +17,7 @@ import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import { HEDERA_NETWORK, VERIFY_PRICE, type Hex } from "@tmb/shared";
 import { signVerification } from "@tmb/shared/sign";
 import { handleVerify } from "./handler.ts";
-import { ScenarioBook, NonceSource, isScenario, SCENARIOS } from "./observe.ts";
+import { ScenarioBook, NonceSource, isScenario, SCENARIOS, priceFor, dealIdOf } from "./observe.ts";
 
 const need = (k: string) => {
   const v = process.env[k];
@@ -29,6 +29,8 @@ const FACILITATOR_URL = process.env.FACILITATOR_URL ?? "https://api.testnet.bloc
 const PAY_TO = need("VERIFIER_PAYTO");
 const SIGNER_KEY = need("VERIFIER_EVM_PRIVATE_KEY") as Hex;
 const PRICE = process.env.VERIFY_PRICE ?? VERIFY_PRICE;
+// Price under the "overcharge" demo scenario (greedy merchant, switchable from the dashboard).
+const OVERCHARGE_PRICE = process.env.OVERCHARGE_PRICE ?? "$5.00";
 const PORT = Number(process.env.VERIFIER_PORT ?? 4021);
 const ADMIN_TOKEN = process.env.VERIFIER_ADMIN_TOKEN ?? "dev-admin";
 const TTL_SEC = Number(process.env.VERIFY_TTL_SEC ?? 600);
@@ -67,7 +69,11 @@ const bazaar = declareDiscoveryExtension({
 
 const routeConfig = {
   "POST /verify": {
-    accepts: [{ scheme: "exact", network: HEDERA_NETWORK, price: PRICE, payTo: PAY_TO }],
+    accepts: [{
+      scheme: "exact", network: HEDERA_NETWORK, payTo: PAY_TO,
+      // express.json() runs first, so the body (and its dealId) is available here.
+      price: (ctx: { adapter: { getBody?(): unknown } }) => priceFor(book.for(dealIdOf(ctx.adapter.getBody?.())), PRICE, OVERCHARGE_PRICE),
+    }],
     description: "TrustMeBro shipment verification: observed {weight, status_code, document_verification}, EIP-712 signed for Whitechain",
     mimeType: "application/json",
     serviceName: "TrustMeBro Verifier",
