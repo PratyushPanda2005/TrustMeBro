@@ -16,8 +16,9 @@
     "associate-usdc": "tsx src/associate-usdc.ts"
   },
   "dependencies": {
-    "@tmb/shared": "workspace:*",
+    "@hashgraph/hedera-agent-kit": "4.2.0",
     "@hiero-ledger/sdk": "2.90.1",
+    "@tmb/shared": "workspace:*",
     "dotenv": "^16.4.0"
   },
   "devDependencies": {
