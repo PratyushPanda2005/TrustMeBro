@@ -76,3 +76,31 @@ test("concurrent writes reach HCS in seq order", async () => {
   assert.deepEqual(sent.map((m) => m.seq), [0, 1, 2, 3]);
   assert.deepEqual(verifyChain(sent), { ok: true });
 });
+
+test("each topic keeps its own chain tail, so switching AUDIT_TOPIC_ID starts the new topic at seq 0", async () => {
+  const { auditTailFile } = await import("../src/log.ts");
+  const dir = mkdtempSync(join(tmpdir(), "tmb-audit-"));
+  try {
+    const old = new AuditLog(flakySink().sink, auditTailFile(dir, "0.0.111"));
+    await old.write({ kind: "quote", reason: "old topic" });
+    await old.write({ kind: "paid", reason: "old topic" });
+    const { sink, sent } = flakySink();
+    await new AuditLog(sink, auditTailFile(dir, "0.0.222")).write({ kind: "quote", reason: "new topic" });
+    assert.equal(sent[0].seq, 0);
+    assert.equal(sent[0].prevHash, "0".repeat(64));
+    assert.notEqual(auditTailFile(dir, "0.0.111"), auditTailFile(dir, "0.0.222"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("close() waits for queued submits, then closes the sink's client so a script can exit", async () => {
+  const { sink, sent } = flakySink(0, () => 10);
+  let closed = false;
+  const log = new AuditLog({ ...sink, close: () => { closed = true; } });
+  const pending = log.write({ kind: "quote", reason: "last one" });
+  await log.close();
+  assert.equal(sent.length, 1, "message submitted before close");
+  assert.equal(closed, true);
+  await pending;
+});

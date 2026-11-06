@@ -7,7 +7,9 @@ import { Client, PrivateKey, TopicCreateTransaction, TopicMessageSubmitTransacti
 import type { HcsMessage } from "@tmb/shared";
 
 export interface AuditSink {
-  submit(m: HcsMessage): Promise<{ topicSequence?: number }>;
+  submit(m: HcsMessage): Promise<{ topicSequence?: number; hederaTxId?: string }>;
+  /** Releases the Hedera client (open gRPC channels keep a script alive). */
+  close?(): void;
 }
 
 export class ConsoleSink implements AuditSink {
@@ -46,5 +48,8 @@ export class HcsSink implements AuditSink {
       .sign(this.key);
     const receipt = await (await tx.execute(this.client)).getReceipt(this.client);
     return { topicSequence: Number(receipt.topicSequenceNumber) };
+  }
+  close() {
+    this.client.close();
   }
 }

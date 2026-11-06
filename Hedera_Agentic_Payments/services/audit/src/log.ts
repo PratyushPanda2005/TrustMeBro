@@ -1,6 +1,6 @@
 /** Glue: chain + sink + local tail file, so a restarted agent continues the same chain. */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { HcsMessage } from "@tmb/shared";
 import { AuditChain, type AuditInput } from "./chain.ts";
 import type { AuditSink } from "./hcs.ts";
@@ -38,6 +38,12 @@ export class AuditLog {
     return m;
   }
 
+  /** Waits for every queued submit, then closes the sink's client. Call before a script exits. */
+  async close() {
+    await this.queue;
+    this.sink.close?.();
+  }
+
   private async flush() {
     while (this.outbox.length) {
       const head = this.outbox[0];
@@ -58,4 +64,9 @@ export class AuditLog {
     if (last) writeFileSync(this.tailFile, JSON.stringify(last));
     writeFileSync(this.outboxFile, JSON.stringify(this.outbox));
   }
+}
+
+/** Local chain tail for one topic. A new AUDIT_TOPIC_ID gets a fresh chain from seq 0. */
+export function auditTailFile(stateDir: string, topicId: string | undefined): string {
+  return join(stateDir, `audit-tail-${topicId && /^0\.0\.\d+$/.test(topicId) ? topicId : "console"}.json`);
 }
