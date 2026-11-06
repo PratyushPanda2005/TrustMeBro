@@ -1,5 +1,7 @@
 /** Network constants (sources: docs/plans/TMB-00-master-plan.md §8). */
 export const WHITECHAIN_CHAIN_ID = 1874 as const; // Whitechain Sepolia (0x752)
+/** Lane C's local stand-in: anvil (`npm run local` in services/verifier). Test keys only. */
+export const LOCAL_ANVIL_CHAIN_ID = 31337 as const;
 export const WHITECHAIN_RPC = "https://rpc.testnet.whitechain.io";
 export const WHITECHAIN_WS = "wss://rpc.testnet.whitechain.io/ws";
 export const WHITECHAIN_EXPLORER = "https://explorer.testnet.whitechain.io";

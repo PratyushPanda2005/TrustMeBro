@@ -6,7 +6,8 @@
  *   Domain: { name: "TrustMeBro", version: "1", chainId: 1874, verifyingContract: TradeDeals }
  *   Verification(bytes32 dealId,uint32 observedKg,uint8 statusCode,bytes32 docHash,uint64 observedAt,uint256 nonce,uint256 expiry)
  *
- * chainId is Whitechain's 1874, never Hedera's 296. dealId is the contract's uint256 id as bytes32.
+ * chainId is Whitechain's 1874 (or 31337 on lane C's local anvil), never Hedera's 296.
+ * dealId is the contract's uint256 id as bytes32.
  */
 import { WHITECHAIN_CHAIN_ID } from "./constants.ts";
 
@@ -49,11 +50,11 @@ export interface Verification {
   expiry: bigint;
 }
 
-export function verificationDomain(tradeDeals: Hex) {
+export function verificationDomain(tradeDeals: Hex, chainId: number = WHITECHAIN_CHAIN_ID) {
   return {
     name: DOMAIN_NAME,
     version: DOMAIN_VERSION,
-    chainId: WHITECHAIN_CHAIN_ID,
+    chainId,
     verifyingContract: tradeDeals,
   } as const;
 }

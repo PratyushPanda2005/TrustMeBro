@@ -1,6 +1,6 @@
 /** Wire schemas shared by verifier, agent and dashboard. Plan v5 (docs/plans/TMB-00-master-plan.md §8, §9). */
 import { z } from "zod";
-import { WHITECHAIN_CHAIN_ID } from "./constants.ts";
+import { LOCAL_ANVIL_CHAIN_ID, WHITECHAIN_CHAIN_ID } from "./constants.ts";
 
 export const Hex32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected 32-byte hex");
 export const Address = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected 20-byte address");
@@ -37,13 +37,28 @@ export const VerificationJson = z.object({
 });
 export type VerificationJson = z.infer<typeof VerificationJson>;
 
-/** 200 body of POST /verify. */
+/** The EIP-712 domain the verification is signed under: Whitechain 1874, or lane C's local anvil. */
+export const VerificationDomainJson = z.object({
+  name: z.literal("TrustMeBro"),
+  version: z.literal("1"),
+  chainId: z.union([z.literal(WHITECHAIN_CHAIN_ID), z.literal(LOCAL_ANVIL_CHAIN_ID)]),
+  verifyingContract: Address,
+});
+
+/**
+ * 200 body of POST /verify, lane C's format (services/verifier/src/server.ts at the repo root).
+ * `expected` is the verifier's own forecast of the contract's verdict: informational only, the
+ * agent never acts on it; the contract decides. Evidence stays off HCS (plan v5, Option A).
+ */
 export const VerifyResponse = z.object({
   verification: VerificationJson,
   signature: HexSig,
   signer: Address,
-  chainId: z.literal(WHITECHAIN_CHAIN_ID),
-  verifyingContract: Address,
+  sigHash: Hex32,
+  domain: VerificationDomainJson,
+  dealId: z.string().optional(),
+  check: z.number().int().positive().optional(),
+  expected: z.object({ outcome: z.string(), falsifiedMask: z.number().int() }).optional(),
 });
 export type VerifyResponse = z.infer<typeof VerifyResponse>;
 

@@ -66,3 +66,44 @@ test("every ABI entry the agent uses equals lane C's current generated ABI", { s
   assert.deepEqual({ ...DEAL_STATE }, { ...constants.DealState });
   assert.deepEqual({ ...OUTCOME }, { ...constants.Outcome });
 });
+
+const laneCVerifier = existsSync(laneC("services/verifier/node_modules/express/package.json"));
+test("lane C's real verifier response parses, recovers to its signer and carries keccak256(signature)", {
+  skip: present && laneCVerifier ? false : "lane C's services/verifier is not installed (npm ci there)",
+}, async () => {
+  const { VerifyResponse } = await import("../src/schemas.ts");
+  const { recoverVerificationSigner, sigHash } = await import("../src/sign.ts");
+  const { createApp } = await import(laneC("services/verifier/src/server.ts").href);
+  const { ScenarioBook } = await import(laneC("services/verifier/src/scenarios.ts").href);
+  const { createVerificationSigner } = await import(laneC("services/verifier/src/signer.ts").href);
+  const signer = createVerificationSigner("0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"); // anvil key #9
+  const NOW = 1_762_400_000n;
+  const deal = {
+    dealId: 7n, state: DEAL_STATE.Claimed, declaredKg: 10_000, claimedStatus: STATUS.LOADED, docHash: hash(0xa),
+    claimTime: NOW - 30n, verifyDeadline: NOW + 600n, observedAt: 0n, checks: 0, containerNo: "MSKU1234567", blRef: "BL-001",
+  };
+  const silent = { info() {}, warn() {}, error() {} };
+  for (const chainId of [1874, 31337]) {
+    const app = createApp({
+      reader: { chainId: async () => chainId, verifierAddress: async () => signer.address, deal: async (id: bigint) => (id === 7n ? deal : undefined), chainTime: async () => NOW },
+      signer, scenarios: new ScenarioBook("honest"), tradeDeals: "0x1874000000000000000000000000000000001874", chainId,
+      signatureTtlSeconds: 600, payments: { enabled: false }, log: silent, now: () => NOW,
+    });
+    const server = app.listen(0);
+    await new Promise((r) => server.once("listening", r));
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as any).port}/verify`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dealId: hash(7), shipmentRef: { containerNo: "MSKU1234567", blRef: "BL-001" } }),
+      });
+      assert.equal(res.status, 200);
+      const r = VerifyResponse.parse(await res.json());
+      assert.equal(r.domain.chainId, chainId);
+      assert.equal(r.verification.dealId, hash(7));
+      assert.equal(r.sigHash, sigHash(r.signature as `0x${string}`));
+      assert.equal(await recoverVerificationSigner(r), signer.address);
+    } finally {
+      server.close();
+    }
+  }
+});

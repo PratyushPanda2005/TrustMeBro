@@ -21,12 +21,20 @@ test("the agent can't send claims: any extra field is rejected", () => {
 
 const verification = { dealId: DEAL, observedKg: 9_850, statusCode: 4, docHash: HASH, observedAt: "1800000000", nonce: "1", expiry: "1800000600" };
 
-test("VerifyResponse carries observed values and requires chainId 1874 (Whitechain), not Hedera 296", () => {
-  const base = { verification, signature: "0x" + "cd".repeat(65), signer: ADDR, verifyingContract: ADDR };
-  assert.equal(VerifyResponse.safeParse({ ...base, chainId: 1874 }).success, true);
-  assert.equal(VerifyResponse.safeParse({ ...base, chainId: 296 }).success, false);
-  assert.equal(VerifyResponse.safeParse({ ...base, chainId: 1874, verification: { ...verification, statusCode: 6 } }).success, false);
-  assert.equal(VerifyResponse.safeParse({ ...base, chainId: 1874, verification: { ...verification, observedKg: -1 } }).success, false);
+test("VerifyResponse is lane C's format: domain on Whitechain 1874 (or local anvil 31337), never Hedera 296", () => {
+  const domain = { name: "TrustMeBro", version: "1", chainId: 1874, verifyingContract: ADDR };
+  const base = { verification, signature: "0x" + "cd".repeat(65), signer: ADDR, sigHash: HASH, domain };
+  assert.equal(VerifyResponse.safeParse(base).success, true);
+  assert.equal(VerifyResponse.safeParse({ ...base, domain: { ...domain, chainId: 31337 } }).success, true);
+  assert.equal(VerifyResponse.safeParse({ ...base, domain: { ...domain, chainId: 296 } }).success, false);
+  assert.equal(VerifyResponse.safeParse({ ...base, domain: { ...domain, name: "Other" } }).success, false);
+  assert.equal(VerifyResponse.safeParse({ ...base, sigHash: undefined }).success, false);
+  assert.equal(VerifyResponse.safeParse({ ...base, verification: { ...verification, statusCode: 6 } }).success, false);
+  assert.equal(VerifyResponse.safeParse({ ...base, verification: { ...verification, observedKg: -1 } }).success, false);
+  // lane C's extra fields (evidence, demo) are dropped: evidence never goes to HCS
+  const parsed = VerifyResponse.parse({ ...base, evidence: { weighbridge: {} }, demo: { scenario: "honest" }, check: 1 });
+  assert.equal("evidence" in parsed, false);
+  assert.equal(parsed.check, 1);
 });
 
 test("domain binds name, version, Whitechain chain id and the deals contract", () => {

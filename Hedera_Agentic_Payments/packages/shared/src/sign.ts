@@ -24,28 +24,33 @@ export function fromJson(v: VerificationJson): Verification {
   };
 }
 
-const typed = (tradeDeals: Hex, v: Verification) =>
-  ({ domain: verificationDomain(tradeDeals), types: VERIFICATION_TYPES, primaryType: "Verification", message: v }) as const;
+const typed = (tradeDeals: Hex, v: Verification, chainId: number) =>
+  ({ domain: verificationDomain(tradeDeals, chainId), types: VERIFICATION_TYPES, primaryType: "Verification", message: v }) as const;
 
 /** The EIP-712 digest TradeDeals.hashVerification returns for this message. */
-export function verificationDigest(tradeDeals: Hex, v: Verification): Hex {
-  return hashTypedData(typed(tradeDeals, v));
+export function verificationDigest(tradeDeals: Hex, v: Verification, chainId: number = WHITECHAIN_CHAIN_ID): Hex {
+  return hashTypedData(typed(tradeDeals, v, chainId));
 }
 
-export async function signVerification(privateKey: Hex, tradeDeals: Hex, v: Verification): Promise<VerifyResponse> {
+/** Signs and returns the POST /verify body in lane C's format (domain nested, sigHash included). */
+export async function signVerification(
+  privateKey: Hex, tradeDeals: Hex, v: Verification, chainId: 1874 | 31337 = WHITECHAIN_CHAIN_ID,
+): Promise<VerifyResponse> {
   const account = privateKeyToAccount(privateKey);
-  const signature = await account.signTypedData(typed(tradeDeals, v));
+  const signature = await account.signTypedData(typed(tradeDeals, v, chainId));
   return {
     verification: toJson(v),
     signature,
     signer: account.address,
-    chainId: WHITECHAIN_CHAIN_ID,
-    verifyingContract: tradeDeals,
+    sigHash: sigHash(signature),
+    domain: verificationDomain(tradeDeals, chainId) as VerifyResponse["domain"],
   };
 }
 
+/** Recovers the signer under the domain the response claims; the agent separately checks that domain is ours. */
 export async function recoverVerificationSigner(r: VerifyResponse): Promise<Hex> {
-  return recoverTypedDataAddress({ ...typed(r.verifyingContract as Hex, fromJson(r.verification)), signature: r.signature as Hex });
+  const { verifyingContract, chainId } = r.domain;
+  return recoverTypedDataAddress({ ...typed(verifyingContract as Hex, fromJson(r.verification), chainId), signature: r.signature as Hex });
 }
 
 /**
