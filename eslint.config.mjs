@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored Claude Code skills.
     ".claude/**",
+    // Foundry project (Solidity, build output, npm-vendored libraries).
+    "contracts/**",
   ]),
 ])
 

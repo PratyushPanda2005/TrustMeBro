@@ -1,0 +1,19 @@
+{
+  "name": "@trustmebro/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TrustMeBro smart contracts (Foundry) for Whitechain Sepolia, chain 1874",
+  "scripts": {
+    "build": "forge build --sizes",
+    "test": "forge test -vv",
+    "gas": "forge test --gas-report",
+    "fmt": "forge fmt",
+    "export": "node script/export.mjs"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.4.0"
+  },
+  "devDependencies": {
+    "forge-std": "github:foundry-rs/forge-std#v1.9.7"
+  }
+}
