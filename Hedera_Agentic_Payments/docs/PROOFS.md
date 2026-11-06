@@ -24,6 +24,17 @@ Lane C's own stack (`npm run local` in `services/verifier` at the repo root, `PA
 |---|---|---|
 | deal 1, honest | [`0.0.7162784@1793962630.360869930`](https://hashscan.io/testnet/transaction/0.0.7162784@1793962630.360869930) | PASS: observed 9,850 kg, status 4 (DEPARTED), signed for chain 31337; the verifier's forecast "Verified" is shown but ignored (the contract decides) |
 
+### Integration with lane C, step 2: checks before paying (`getDeal`, `verifier()`), deals scoped per deployment
+Same stack. Before each paid check the agent reads `getDeal` (still Claimed or Pending?) and `verifier()` (is it the key we pay for?). The spending ledger keys a deal by (chain, TradeDeals, deal id), plus the genesis hash on anvil, which redeploys at the same address on every restart. Agent USDC 30.7 → 29.5 over steps 1–2: exactly the four 0.30 payments listed (step 1's two runs, against lane C's verifier and the regression run against ours, plus the two below).
+
+| Run | Hedera tx | Result |
+|---|---|---|
+| deal 99 (doesn't exist) | none | PASS: `getDeal` state None → skipped, nothing paid |
+| configured verifier `0x76b4…` ≠ `verifier()` `0xa0Ee…` | none | PASS: refused before paying (answers would revert `InvalidSigner`) |
+| deal 1, Claimed, `verifier()` matches | [`0.0.7162784@1793963616.056418327`](https://hashscan.io/testnet/transaction/0.0.7162784@1793963616.056418327) | PASS: paid, signed answer accepted |
+| deal 1 after an anvil restart (same address, new genesis) | [`0.0.7162784@1793963709.696072576`](https://hashscan.io/testnet/transaction/0.0.7162784@1793963709.696072576) | PASS: a new deal, paid. Before the fix it was refused as "already paid" |
+| the same deal 1 again | none | PASS: "already paid for check 1 of this deal", nothing paid |
+
 ### Plan v5 e2e (`pnpm e2e`): value claims, contract outcomes, rechecks, Option A records
 Plan v5 §3 steps 4–6 and §4 examples. Each case: a fresh exporter declares 10,000 kg / LOADED / docHash A → the agent pays `POST /verify` with `{dealId, shipmentRef}` only → the mock TradeDeals (TS mirror of lane C's `_judge` + `TrustRegistry`) decides → HCS via Agent Kit. All 7 cases + the HCS check passed, exit 0. Re-checked independently on the Mirror Node: six `CRYPTOTRANSFER SUCCESS` of 300000 each, agent USDC 34.9 → 33.1 (exactly 1.80); each relay message on topic `0.0.11336190` carries `hederaTxId`, `payer` `0.0.11331527`, `sigHash`, `whitechainTx` and the judged outcome.
 

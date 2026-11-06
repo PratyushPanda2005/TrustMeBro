@@ -5,7 +5,7 @@ Run these in order on a dev machine (Node ≥ 20, pnpm 10). Each step ends with 
 ## 0. Install + unit tests (no network needed after install)
 ```bash
 pnpm install
-pnpm -r test          # shared 29 · verifier 16 · audit 18 · agent 53
+pnpm -r test          # shared 29 · verifier 16 · audit 18 · agent 60
 pnpm -r typecheck
 pnpm --filter @tmb/shared fixtures   # viem-signed samples for lane C → packages/shared/fixtures/
 ```
@@ -76,6 +76,8 @@ npm run claim -- MSKU1234567 honest                                  # → "Deal
 cd ../../Hedera_Agentic_Payments
 CHAIN_ADAPTER=local pnpm agent:once 1                                # reads deal 1, pays on Hedera, checks the signed answer
 ```
+Before paying, the agent reads `getDeal` (only Claimed or Pending deals are checked) and `verifier()` (it must be the key the agent pays for, or every answer would revert `InvalidSigner`). Rechecks happen only on Pending, at most 3 paid checks per deal; the last one waits until just after `verifyDeadline`, so a stuck shipment gets a verdict from the contract. The spending ledger keys a deal by (chain, TradeDeals, deal id), plus anvil's genesis hash locally, because anvil redeploys at the same address on every restart.
+
 `CHAIN_ADAPTER=local` takes TradeDeals, chain id, verifier address and the relayer key from `services/verifier/local-deployment.json` (`LOCAL_DEPLOYMENT` overrides the path). Stop our own verifier first: both use port 4021.
 
 ## 5. G2: real Whitechain relay (lane C's TradeDeals deployed)
