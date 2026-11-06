@@ -1,26 +1,51 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { signVerification, recoverVerificationSigner, verificationDigest } from "../src/sign.ts";
+import { VERIFICATION_TYPE_STRING, encodeType, dealIdToBytes32, type Verification } from "../src/eip712.ts";
 
-// viem is a real dependency; this file skips only where it isn't installed.
-const viem = await import("viem").catch(() => null);
-const skip = viem ? false : "viem not installed in this environment";
+const KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as const; // anvil #1, test only
+// Lane C's own fixture (contracts/test/fixtures/eip712.json on their branch): their forge test verifies this signature.
+const laneC = JSON.parse(readFileSync(new URL("../vectors/eip712-lane-c.json", import.meta.url), "utf8"));
+const laneCMessage: Verification = {
+  dealId: laneC.message.dealId,
+  observedKg: Number(laneC.message.observedKg),
+  statusCode: Number(laneC.message.statusCode),
+  docHash: laneC.message.docHash,
+  observedAt: BigInt(laneC.message.observedAt),
+  nonce: BigInt(laneC.message.nonce),
+  expiry: BigInt(laneC.message.expiry),
+};
 
-const KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as const; // test-only key
-const DEALS = "0x5FbDB2315678afecb367f032d93F642f64180aa3" as const;
-
-test("signature recovers to the verifier address", { skip }, async () => {
-  const { signVerification, recoverVerificationSigner } = await import("../src/sign.ts");
-  const res = await signVerification(KEY, DEALS, {
-    dealId: ("0x" + "ab".repeat(32)) as `0x${string}`, weight: true, statusCode: true, documents: true, nonce: 1n, expiry: 2_000_000_000n,
-  });
-  assert.equal((await recoverVerificationSigner(res)).toLowerCase(), res.signer.toLowerCase());
+test("type string is exactly lane C's VERIFICATION_TYPEHASH input (plan v5 §8)", () => {
+  assert.equal(
+    VERIFICATION_TYPE_STRING,
+    "Verification(bytes32 dealId,uint32 observedKg,uint8 statusCode,bytes32 docHash,uint64 observedAt,uint256 nonce,uint256 expiry)",
+  );
+  assert.equal(encodeType(), VERIFICATION_TYPE_STRING);
 });
 
-test("tampering with any field changes the recovered signer", { skip }, async () => {
-  const { signVerification, recoverVerificationSigner } = await import("../src/sign.ts");
-  const res = await signVerification(KEY, DEALS, {
-    dealId: ("0x" + "ab".repeat(32)) as `0x${string}`, weight: false, statusCode: true, documents: true, nonce: 7n, expiry: 2_000_000_000n,
-  });
-  const forged = { ...res, verification: { ...res.verification, weight: true } };
-  assert.notEqual((await recoverVerificationSigner(forged)).toLowerCase(), res.signer.toLowerCase());
+test("cross-lane round trip: our signer reproduces lane C's digest and signature byte for byte", async () => {
+  const res = await signVerification(KEY, laneC.domain.verifyingContract, laneCMessage);
+  assert.equal(verificationDigest(laneC.domain.verifyingContract, laneCMessage), laneC.digest);
+  assert.equal(res.signature, laneC.signature);
+  assert.equal(res.signer, laneC.signer);
+  assert.equal(await recoverVerificationSigner(res), laneC.signer);
+});
+
+test("tampering with any observed value changes the recovered signer", async () => {
+  const res = await signVerification(KEY, laneC.domain.verifyingContract, laneCMessage);
+  for (const forged of [
+    { ...res.verification, observedKg: 10_000 },
+    { ...res.verification, statusCode: 5 },
+    { ...res.verification, docHash: "0x" + "bb".repeat(32) },
+    { ...res.verification, observedAt: "1800000001" },
+  ]) {
+    assert.notEqual(await recoverVerificationSigner({ ...res, verification: forged }), res.signer);
+  }
+});
+
+test("dealIdToBytes32 encodes the contract's uint256 deal id like lane C", () => {
+  assert.equal(dealIdToBytes32(1n), laneC.message.dealId);
+  assert.throws(() => dealIdToBytes32(-1n), RangeError);
 });

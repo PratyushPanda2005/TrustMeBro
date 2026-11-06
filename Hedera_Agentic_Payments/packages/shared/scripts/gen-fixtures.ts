@@ -1,33 +1,39 @@
 /**
- * Writes signed sample responses for lane C's Foundry tests (cross-language
- * round trip: viem signs, Solidity verifies). Uses fixed TEST-ONLY keys.
+ * Writes signed sample responses (plan v5 §4 examples) for lane C's Foundry tests and the
+ * dashboard: viem signs, Solidity verifies. Fixed TEST-ONLY keys.
  * Run: pnpm --filter @tmb/shared fixtures
- * Lane C reads fixtures/verifications.json via vm.readFile + vm.parseJson.
- * The verifyingContract is the address Foundry assigns to the first contract
- * deployed by the default test sender; override with FIXTURE_DEALS=0x...
+ * The verifyingContract defaults to the address lane C's own EIP-712 fixture uses; override with
+ * FIXTURE_DEALS=0x... The claim these observations answer: 10,000 kg, LOADED, docHash A.
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { privateKeyToAccount } from "viem/accounts";
 import { signVerification } from "../src/sign.ts";
-import type { Hex } from "../src/eip712.ts";
+import { dealIdToBytes32, type Hex, type Verification } from "../src/eip712.ts";
+import { STATUS } from "../src/trust.ts";
 
 const VERIFIER_KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as Hex; // anvil #1, test only
 const IMPOSTOR_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a" as Hex; // anvil #2, test only
-const DEALS = (process.env.FIXTURE_DEALS ?? "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f") as Hex;
-const DEAL_ID = ("0x" + "ab".repeat(32)) as Hex;
+const DEALS = (process.env.FIXTURE_DEALS ?? "0x1874000000000000000000000000000000001874") as Hex;
+const DOC_A = ("0x" + "aa".repeat(32)) as Hex;
+const DOC_B = ("0x" + "bb".repeat(32)) as Hex;
+const OBSERVED_AT = 1_800_000_000n;
 const FAR = 4_102_444_800n; // 2100-01-01
 
-const base = { dealId: DEAL_ID, weight: true, statusCode: true, documents: true, nonce: 1n, expiry: FAR };
+const base: Verification = {
+  dealId: dealIdToBytes32(1n), observedKg: 9_850, statusCode: STATUS.DEPARTED, docHash: DOC_A, observedAt: OBSERVED_AT, nonce: 1n, expiry: FAR,
+};
 
 const cases = {
-  valid_all_true: await signVerification(VERIFIER_KEY, DEALS, base),
-  valid_weight_false: await signVerification(VERIFIER_KEY, DEALS, { ...base, weight: false, nonce: 2n }),
-  valid_docs_false: await signVerification(VERIFIER_KEY, DEALS, { ...base, documents: false, nonce: 3n }),
-  expired: await signVerification(VERIFIER_KEY, DEALS, { ...base, nonce: 4n, expiry: 1n }),
-  wrong_signer: await signVerification(IMPOSTOR_KEY, DEALS, { ...base, nonce: 5n }),
-  wrong_contract: await signVerification(VERIFIER_KEY, "0x000000000000000000000000000000000000dEaD", { ...base, nonce: 6n }),
+  honest: await signVerification(VERIFIER_KEY, DEALS, base),
+  lag: await signVerification(VERIFIER_KEY, DEALS, { ...base, observedKg: 10_020, statusCode: STATUS.GATED_IN, nonce: 2n }),
+  short_weight: await signVerification(VERIFIER_KEY, DEALS, { ...base, observedKg: 8_020, statusCode: STATUS.LOADED, nonce: 3n }),
+  fake_docs: await signVerification(VERIFIER_KEY, DEALS, { ...base, observedKg: 10_000, statusCode: STATUS.LOADED, docHash: DOC_B, nonce: 4n }),
+  expired: await signVerification(VERIFIER_KEY, DEALS, { ...base, nonce: 5n, expiry: 1n }),
+  wrong_signer: await signVerification(IMPOSTOR_KEY, DEALS, { ...base, nonce: 6n }),
+  wrong_contract: await signVerification(VERIFIER_KEY, "0x000000000000000000000000000000000000dEaD", { ...base, nonce: 7n }),
+  stale_observation: await signVerification(VERIFIER_KEY, DEALS, { ...base, observedAt: 1n, nonce: 8n }),
 };
 
 const out = {
@@ -35,7 +41,8 @@ const out = {
   impostor: privateKeyToAccount(IMPOSTOR_KEY).address,
   verifyingContract: DEALS,
   chainId: 1874,
-  note: "Foundry: vm.chainId(1874) and deploy TradeDeals at verifyingContract (or regenerate with FIXTURE_DEALS). 'reused' = submit valid_all_true twice.",
+  claim: { declaredKg: 10_000, claimedStatus: STATUS.LOADED, docHash: DOC_A },
+  note: "Plan v5 §4 examples. Foundry: vm.chainId(1874), TradeDeals at verifyingContract (or regenerate with FIXTURE_DEALS), claimTime < observedAt. 'reused' = submit `honest` twice. Outcomes: honest Verified, lag Pending, short_weight / fake_docs Rejected.",
   cases,
 };
 
