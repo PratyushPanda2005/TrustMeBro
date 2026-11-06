@@ -6,5 +6,5 @@
   "usdc": { "tokenId": "0.0.429274", "decimals": 6 },
   "accounts": { "agent": "0.0.11331527", "verifierPayTo": "0.0.11331478", "auditOperator": "0.0.11331562" },
   "verifier": { "url": "http://localhost:4021", "price": "$0.30", "signer": "0x76b4B8FFaa84901d5b2aDFB5c6a3592E4e63B1E8" },
-  "auditTopicId": "0.0.11334995"
+  "auditTopicId": "0.0.11336190"
 }
