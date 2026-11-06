@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buyVerification, type BuyDeps } from "../src/buy.ts";
-import { SpendLedger } from "../src/ledger.ts";
+import { SpendLedger, contractScope } from "../src/ledger.ts";
 import type { Policy } from "../src/policy.ts";
 import { sigHash } from "@tmb/shared/sign";
 
@@ -14,6 +14,7 @@ const policy: Policy = {
   maxPerCall: 1_000_000n, maxPerDeal: 1_000_000n, maxPerDay: 10_000_000n, maxChecksPerDeal: 3, maxChecksPerExporterPerDay: 5,
 };
 const TRADE_DEALS = "0x" + "11".repeat(20);
+const SCOPE = contractScope(1874, TRADE_DEALS); // the gate keys deals by (chain, TradeDeals, deal id)
 const CHECK1 = { checkNo: 1, exporter: "0x" + "22".repeat(20) };
 // Plan v5 §8: the agent sends only {dealId, shipmentRef}; claims stay on chain.
 const request = { dealId: DEAL, shipmentRef: { containerNo: "MSKU1234567", blRef: "BL-DEMO-001" } };
@@ -63,7 +64,7 @@ test("happy path: probe → gate allows → pay → settled tx recorded and audi
   assert.equal(r.status, "verified");
   assert.equal(r.settlement?.txId, "0.0.7162784@1762400000.000000001");
   assert.equal(h.calls.paid, 1);
-  assert.equal(h.ledger.alreadyPaid(DEAL, 1), true);
+  assert.equal(h.ledger.alreadyPaid(DEAL, 1, SCOPE), true);
   assert.deepEqual(h.audit.map((e) => e.kind), ["quote", "paid"]);
 });
 
@@ -88,7 +89,7 @@ test("verifier outage (503 after paywall) → not charged, not recorded, no verd
   const h = harness({ paidStatus: 503 });
   const r = await buyVerification(request, CHECK1, h.deps);
   assert.equal(r.status, "no_verdict");
-  assert.equal(h.ledger.alreadyPaid(DEAL, 1), false);
+  assert.equal(h.ledger.alreadyPaid(DEAL, 1, SCOPE), false);
   assert.equal(h.audit.at(-1).kind, "error");
 });
 
@@ -96,7 +97,7 @@ test("response signed by the wrong key is paid for but never relayed", async () 
   const h = harness({ signer: "0x" + "66".repeat(20) });
   const r = await buyVerification(request, CHECK1, h.deps);
   assert.equal(r.status, "untrusted");
-  assert.equal(h.ledger.alreadyPaid(DEAL, 1), true);
+  assert.equal(h.ledger.alreadyPaid(DEAL, 1, SCOPE), true);
   assert.equal(h.audit.at(-1).kind, "error");
 });
 
@@ -110,7 +111,7 @@ test("bait and switch (retry quotes a new price/payTo): client aborts, refused, 
   const h = harness({ payThrows: "Failed to create payment payload: Payment creation aborted: payTo changed after approval: 0.0.666 ≠ 0.0.5005" });
   const r = await buyVerification(request, CHECK1, h.deps);
   assert.equal(r.status, "refused");
-  assert.equal(h.ledger.alreadyPaid(DEAL, 1), false);
+  assert.equal(h.ledger.alreadyPaid(DEAL, 1, SCOPE), false);
   assert.deepEqual(h.audit.map((e) => e.kind), ["quote", "refused"]);
 });
 
@@ -163,4 +164,13 @@ test("a response for another deal is untrusted", async () => {
   const h = harness({ body: { ...okBody, verification: { ...okBody.verification, dealId: "0x" + "bb".repeat(32) } } });
   assert.equal((await buyVerification(request, CHECK1, h.deps)).status, "untrusted");
   assert.match(h.audit.at(-1).reason, /another deal/);
+});
+
+test("an explicit ledger scope (e.g. a restarted anvil at the same address) makes deal 1 a new deal", async () => {
+  const h = harness();
+  assert.equal((await buyVerification(request, CHECK1, h.deps)).status, "verified");
+  assert.equal((await buyVerification(request, CHECK1, h.deps)).status, "refused"); // same deployment: never pay twice
+  h.deps.scope = `${SCOPE}@0xnewgenesis`;
+  assert.equal((await buyVerification(request, CHECK1, h.deps)).status, "verified");
+  assert.equal(h.calls.paid, 2);
 });

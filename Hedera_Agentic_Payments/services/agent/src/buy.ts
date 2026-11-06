@@ -9,7 +9,7 @@
 import { VerifyResponse, type VerifyRequest, HEDERA_USDC_TESTNET } from "@tmb/shared";
 import { sigHash } from "@tmb/shared/sign";
 import { evaluate, type Policy } from "./policy.ts";
-import type { SpendLedger } from "./ledger.ts";
+import { contractScope, type SpendLedger } from "./ledger.ts";
 import { parsePaymentRequired, parseSettlement, type PinnedPayment, type Settlement } from "./x402.ts";
 
 export interface AuditEvent {
@@ -30,6 +30,8 @@ export interface BuyDeps {
   tradeDeals: string;
   /** The chain that TradeDeals lives on (EIP-712 domain chainId): 1874, or 31337 on lane C's local anvil. */
   chainId: number;
+  /** Ledger scope for deal ids; default contractScope(chainId, tradeDeals). See target.ts deploymentScope. */
+  scope?: string;
   policy: Policy;
   ledger: SpendLedger;
   now: () => number;
@@ -69,10 +71,11 @@ export async function buyVerification(req: VerifyRequest, ctx: CheckContext, d: 
   const payment = { payTo: quote.payTo, amount: quote.amount.toString(), asset: quote.asset };
   await d.audit({ kind: "quote", dealId: req.dealId, reason: `quoted ${payment.amount} of ${quote.asset}${quote.hasBazaar ? " (bazaar)" : ""}`, payment });
 
-  // 2. Spending gate.
-  const decision = evaluate({ dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, network: quote.network, asset: quote.asset, payTo: quote.payTo, amount: quote.amount }, d.policy, d.ledger, d.now());
+  // 2. Spending gate. A deal is (chain, TradeDeals, deal id): ids restart on every deployment.
+  const contract = d.scope ?? contractScope(d.chainId, d.tradeDeals);
+  const decision = evaluate({ contract, dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, network: quote.network, asset: quote.asset, payTo: quote.payTo, amount: quote.amount }, d.policy, d.ledger, d.now());
   if (decision.decision === "pending_human") {
-    const approvalId = d.ledger.requestApproval({ dealId: req.dealId, checkNo: ctx.checkNo, payTo: quote.payTo, amount: quote.amount, reason: decision.reason, at: d.now() });
+    const approvalId = d.ledger.requestApproval({ contract, dealId: req.dealId, checkNo: ctx.checkNo, payTo: quote.payTo, amount: quote.amount, reason: decision.reason, at: d.now() });
     await d.audit({ kind: "pending_human", dealId: req.dealId, reason: decision.reason, payment });
     return { status: "pending_human", reason: decision.reason, approvalId };
   }
@@ -106,7 +109,7 @@ export async function buyVerification(req: VerifyRequest, ctx: CheckContext, d: 
   }
   const settleHeader = paid.headers.get("PAYMENT-RESPONSE");
   const settlement: Settlement = settleHeader ? parseSettlement(settleHeader) : { success: false, error: "missing PAYMENT-RESPONSE" };
-  d.ledger.recordPayment({ dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, payTo: quote.payTo, amount: quote.amount, at: d.now(), hederaTxId: settlement.txId });
+  d.ledger.recordPayment({ contract, dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, payTo: quote.payTo, amount: quote.amount, at: d.now(), hederaTxId: settlement.txId });
   await d.audit({ kind: "paid", dealId: req.dealId, reason: settlement.success ? "settled on Hedera" : `settlement unclear: ${settlement.error}`, payment: { ...payment, hederaTxId: settlement.txId, payer: settlement.payer } });
 
   // 4. Trust nothing: schema, binding to this deal / chain / contract, sigHash, signer.

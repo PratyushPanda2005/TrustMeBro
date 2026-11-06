@@ -16,6 +16,8 @@ export interface Policy {
 }
 
 export interface Quote {
+  /** contractScope(chainId, TradeDeals): deal ids restart at 1 on every deployment. */
+  contract?: string;
   dealId: string;
   /** Which paid check of this deal this is: 1, then 2–3 for rechecks. */
   checkNo: number;
@@ -34,17 +36,17 @@ export function evaluate(q: Quote, p: Policy, ledger: SpendLedger, nowMs: number
   if (q.network !== p.network) return { decision: "deny", reason: `wrong network ${q.network}` };
   if (q.asset !== p.asset) return { decision: "deny", reason: `wrong asset ${q.asset}` };
   if (!p.allowlist.has(q.payTo)) return { decision: "deny", reason: `merchant ${q.payTo} not on allowlist` };
-  if (ledger.alreadyPaid(q.dealId, q.checkNo)) return { decision: "deny", reason: `already paid for check ${q.checkNo} of this deal` };
-  if (ledger.checksPaid(q.dealId) >= p.maxChecksPerDeal) return { decision: "deny", reason: `max ${p.maxChecksPerDeal} checks per deal reached` };
+  if (ledger.alreadyPaid(q.dealId, q.checkNo, q.contract)) return { decision: "deny", reason: `already paid for check ${q.checkNo} of this deal` };
+  if (ledger.checksPaid(q.dealId, q.contract) >= p.maxChecksPerDeal) return { decision: "deny", reason: `max ${p.maxChecksPerDeal} checks per deal reached` };
 
   if (q.amount > p.maxPerCall) {
-    const approval = ledger.approvalFor(q.dealId, q.checkNo, q.payTo, q.amount);
+    const approval = ledger.approvalFor(q.dealId, q.checkNo, q.payTo, q.amount, q.contract);
     if (approval === "rejected") return { decision: "deny", reason: `human rejected ${fmt(q.amount)} USDC` };
     if (approval !== "approved") {
       return { decision: "pending_human", reason: `price ${fmt(q.amount)} USDC above per-call cap ${fmt(p.maxPerCall)}` };
     }
   }
-  if (ledger.spentOnDeal(q.dealId) + q.amount > p.maxPerDeal) {
+  if (ledger.spentOnDeal(q.dealId, q.contract) + q.amount > p.maxPerDeal) {
     return { decision: "deny", reason: `per-deal budget ${fmt(p.maxPerDeal)} USDC exceeded` };
   }
   if (ledger.spentOnDay(nowMs) + q.amount > p.maxPerDay) {

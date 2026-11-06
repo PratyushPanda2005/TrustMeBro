@@ -23,3 +23,18 @@ test("two processes sharing one ledger file keep both payments (no lost update)"
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("deal ids are per contract: a redeployed TradeDeals' deal 1 is a new deal, but the daily cap still counts both", async () => {
+  const { contractScope } = await import("../src/ledger.ts");
+  const l = new SpendLedger();
+  const old = contractScope(31337, "0xAAAA000000000000000000000000000000000001");
+  const redeployed = contractScope(31337, "0xBBBB000000000000000000000000000000000002");
+  const deal1 = "0x" + "0".repeat(63) + "1";
+  l.recordPayment({ contract: old, dealId: deal1, checkNo: 1, exporter: "0xe", payTo: "0.0.1", amount: 300_000n, at: 0 });
+  assert.equal(l.alreadyPaid(deal1, 1, old), true);
+  assert.equal(l.alreadyPaid(deal1, 1, redeployed), false);
+  assert.equal(l.checksPaid(deal1, redeployed), 0);
+  assert.equal(l.spentOnDeal(deal1, redeployed), 0n);
+  assert.equal(l.spentOnDay(0), 300_000n);
+  assert.equal(contractScope(1874, "0xAbC"), "1874:0xabc");
+});

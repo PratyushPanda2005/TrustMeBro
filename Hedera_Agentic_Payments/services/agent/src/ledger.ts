@@ -3,7 +3,16 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
+/**
+ * Deal ids are per contract: a redeployed TradeDeals (or lane C's local anvil after a restart)
+ * starts again at deal 1. So a deal is (contract, dealId), with contract = "<chainId>:<TradeDeals>".
+ * Records written before this have contract "" and only match each other.
+ */
+export const contractScope = (chainId: number, tradeDeals: string) => `${chainId}:${tradeDeals.toLowerCase()}`;
+
 export interface PaymentRecord {
+  /** contractScope(chainId, TradeDeals) this deal id belongs to. */
+  contract?: string;
   dealId: string;
   /** 1 for the first paid check of a deal, 2–3 for rechecks while the contract says Pending. */
   checkNo: number;
@@ -17,6 +26,7 @@ export interface PaymentRecord {
 
 export interface ApprovalRecord {
   id: string;
+  contract?: string;
   dealId: string;
   checkNo: number;
   payTo: string;
@@ -28,7 +38,8 @@ export interface ApprovalRecord {
 
 const utcDay = (ms: number) => Math.floor(ms / 86_400_000);
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-const key = (dealId: string, checkNo: number) => `${dealId.toLowerCase()}:${checkNo}`;
+const deal = (contract: string | undefined, dealId: string) => `${(contract ?? "").toLowerCase()}|${dealId.toLowerCase()}`;
+const key = (contract: string | undefined, dealId: string, checkNo: number) => `${deal(contract, dealId)}:${checkNo}`;
 /** v4 records carried a stage instead of a check number: they count as the deal's first check. */
 const upgrade = (x: any) => ({ ...x, checkNo: x.checkNo ?? 1, exporter: x.exporter ?? "", amount: BigInt(x.amount) });
 
@@ -65,19 +76,19 @@ export class SpendLedger {
     this.save();
   }
 
-  alreadyPaid(dealId: string, checkNo: number): boolean {
+  alreadyPaid(dealId: string, checkNo: number, contract = ""): boolean {
     this.load();
-    return this.payments.some((p) => key(p.dealId, p.checkNo) === key(dealId, checkNo));
+    return this.payments.some((p) => key(p.contract, p.dealId, p.checkNo) === key(contract, dealId, checkNo));
   }
 
-  checksPaid(dealId: string): number {
+  checksPaid(dealId: string, contract = ""): number {
     this.load();
-    return this.payments.filter((p) => same(p.dealId, dealId)).length;
+    return this.payments.filter((p) => deal(p.contract, p.dealId) === deal(contract, dealId)).length;
   }
 
-  spentOnDeal(dealId: string): bigint {
+  spentOnDeal(dealId: string, contract = ""): bigint {
     this.load();
-    return this.payments.filter((p) => same(p.dealId, dealId)).reduce((s, p) => s + p.amount, 0n);
+    return this.payments.filter((p) => deal(p.contract, p.dealId) === deal(contract, dealId)).reduce((s, p) => s + p.amount, 0n);
   }
 
   spentOnDay(nowMs: number): bigint {
@@ -96,7 +107,7 @@ export class SpendLedger {
   requestApproval(a: Omit<ApprovalRecord, "id" | "status">): string {
     this.load();
     const existing = this.approvals.find(
-      (x) => x.status === "pending" && key(x.dealId, x.checkNo) === key(a.dealId, a.checkNo) && x.payTo === a.payTo && x.amount === a.amount,
+      (x) => x.status === "pending" && key(x.contract, x.dealId, x.checkNo) === key(a.contract, a.dealId, a.checkNo) && x.payTo === a.payTo && x.amount === a.amount,
     );
     if (existing) return existing.id;
     const id = randomUUID();
@@ -114,11 +125,11 @@ export class SpendLedger {
     this.save();
   }
 
-  /** Latest decision for this exact payment (deal, check, payTo, amount). */
-  approvalFor(dealId: string, checkNo: number, payTo: string, amount: bigint): ApprovalRecord["status"] | undefined {
+  /** Latest decision for this exact payment (contract, deal, check, payTo, amount). */
+  approvalFor(dealId: string, checkNo: number, payTo: string, amount: bigint, contract = ""): ApprovalRecord["status"] | undefined {
     this.load();
     const matches = this.approvals.filter(
-      (x) => key(x.dealId, x.checkNo) === key(dealId, checkNo) && x.payTo === payTo && x.amount === amount,
+      (x) => key(x.contract, x.dealId, x.checkNo) === key(contract, dealId, checkNo) && x.payTo === payTo && x.amount === amount,
     );
     return matches.at(-1)?.status;
   }
