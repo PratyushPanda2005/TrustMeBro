@@ -7,18 +7,19 @@
  *      check it reads getDeal (still Claimed/Pending?) and verifier() (the key it pays for?).
  *   4. every step goes to the HCS audit topic (Agent Kit), incl. {hederaTxId, payer, sigHash, whitechainTx}
  *   5. over-cap prices wait for a human via the approvals API (dashboard button)
- * Run: pnpm agent   (CHAIN_ADAPTER=mock until lane C deploys; then whitechain)
+ * Run: pnpm agent   CHAIN_ADAPTER=mock (no chain) | local (lane C's anvil, `npm run local`) | whitechain
  */
 import { join } from "node:path";
-import { hashscanTopic, type Hex } from "@tmb/shared";
+import { hashscanTopic } from "@tmb/shared";
 import { AuditLog, auditTailFile, makeAuditSink } from "@tmb/audit";
 import { buyVerification } from "./buy.ts";
 import { nextCheckInSec, processClaim } from "./agent.ts";
 import { MockChainAdapter, type ChainAdapter, type ClaimedEvent } from "./chain.ts";
-import { WhitechainAdapter } from "./whitechain.ts";
+import { tradeDealsAdapter, type TradeDealsAdapter } from "./whitechain.ts";
 import { startApi } from "./api.ts";
-import { need, tradeDealsOrPlaceholder } from "./config.ts";
+import { tradeDealsOrPlaceholder } from "./config.ts";
 import { demoClaim, liveBuyDeps } from "./live.ts";
+import { chainTarget, deploymentScope } from "./target.ts";
 
 const STATE = join(process.cwd(), ".state");
 const topic = process.env.AUDIT_TOPIC_ID;
@@ -27,16 +28,16 @@ const { sink, kind: auditSink } = makeAuditSink();
 const audit = new AuditLog(sink, auditTailFile(STATE, topic));
 const auditWrite = async (e: any) => { await audit.write(e); console.log(`[agent] ${e.kind.padEnd(13)} ${e.reason}`); };
 
-if (process.env.CHAIN_ADAPTER === "local") {
-  // agent:once already works against lane C's local stack; the relaying runtime there is the next integration step.
-  throw new Error("CHAIN_ADAPTER=local is supported by `pnpm agent:once <dealId>` for now, not the runtime");
-}
-const chain: ChainAdapter = process.env.CHAIN_ADAPTER === "whitechain"
-  ? new WhitechainAdapter(need("TRADE_DEALS_ADDRESS") as Hex, need("RELAYER_PRIVATE_KEY") as Hex, BigInt(process.env.WHITECHAIN_FROM_BLOCK ?? 0))
-  : new MockChainAdapter(tradeDealsOrPlaceholder());
+const adapterKind = process.env.CHAIN_ADAPTER ?? "mock";
+const target = chainTarget();
+const real: TradeDealsAdapter | undefined = adapterKind === "local" || adapterKind === "whitechain"
+  ? tradeDealsAdapter(target, BigInt(process.env.WHITECHAIN_FROM_BLOCK ?? 0))
+  : undefined;
+const chain: ChainAdapter = real ?? new MockChainAdapter(tradeDealsOrPlaceholder());
 
 // Signs only the exact quote the spending gate approved (including human-approved over-cap prices).
-const buyDeps = liveBuyDeps(auditWrite);
+// The ledger knows deals per deployment (anvil redeploys at the same address on every restart).
+const buyDeps = liveBuyDeps(auditWrite, target, real ? await deploymentScope(target) : undefined);
 const maxChecks = buyDeps.policy.maxChecksPerDeal;
 const recheckDelaySec = Number(process.env.RECHECK_DELAY_SEC ?? 20);
 const deps = { chain, audit: auditWrite, expectedSigner: buyDeps.expectedSigner, buy: (req: any, ctx: any) => buyVerification(req, ctx, buyDeps) };
@@ -51,7 +52,12 @@ async function handle(e: ClaimedEvent, checkNo: number) {
   inflight.add(id);
   try {
     const r = await processClaim(e, checkNo, deps);
-    console.log(`[agent] deal ${e.dealId.slice(0, 10)}… check ${checkNo} → ${r.outcome}`);
+    const deal = real ? BigInt(e.dealId).toString() : `${e.dealId.slice(0, 10)}…`;
+    console.log(`[agent] deal ${deal} check ${checkNo} → ${r.outcome}`);
+    if ("txHash" in r && real) {
+      console.log(`        ${target.kind} tx ${real.txLink(r.txHash)}${r.events?.length ? `  events: ${r.events.join(", ")}` : ""}`);
+      if (r.trust) console.log(`        exporter ${r.trust.exporter} trust ${(r.trust.beforeBps / 100).toFixed(2)}% → ${(r.trust.afterBps / 100).toFixed(2)}% (TrustRegistry)`);
+    }
     const wait = nextCheckInSec(r.outcome, checkNo, maxChecks, Math.floor(Date.now() / 1000), e.verifyDeadline, recheckDelaySec);
     if (wait !== null) {
       const last = checkNo + 1 === maxChecks && wait > recheckDelaySec ? " (last check, kept for after verifyDeadline)" : "";
@@ -78,7 +84,11 @@ await startApi({
   },
 });
 
-console.log(`TrustMeBro agent: adapter=${process.env.CHAIN_ADAPTER ?? "mock"} verifier=${buyDeps.url} tradeDeals=${chain.tradeDeals} audit=${auditSink === "console" ? "console" : `${hashscanTopic(topic!)} via ${auditSink}`}`);
+if (real) {
+  const trusted = await real.verifier();
+  console.log(`TradeDeals ${target.tradeDeals} on chain ${target.chainId} (${target.kind}); verifier() ${trusted}${trusted.toLowerCase() === target.expectedSigner.toLowerCase() ? " ✓" : ` ≠ configured ${target.expectedSigner}: checks will be refused`}; relayer ${real.relayer}`);
+}
+console.log(`TrustMeBro agent: adapter=${adapterKind} verifier=${buyDeps.url} tradeDeals=${chain.tradeDeals} audit=${auditSink === "console" ? "console" : `${hashscanTopic(topic!)} via ${auditSink}`}`);
 for (const { claim, checks } of await chain.openClaims()) await handle(claim, checks + 1);
 chain.watchClaims((e) => void handle(e, 1));
 

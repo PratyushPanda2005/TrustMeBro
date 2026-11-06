@@ -38,3 +38,13 @@ test("deal ids are per contract: a redeployed TradeDeals' deal 1 is a new deal, 
   assert.equal(l.spentOnDay(0), 300_000n);
   assert.equal(contractScope(1874, "0xAbC"), "1874:0xabc");
 });
+
+test("the per-exporter daily count is per deployment too (anvil reuses the same exporter address on every restart)", async () => {
+  const { contractScope } = await import("../src/ledger.ts");
+  const l = new SpendLedger();
+  const a = contractScope(31337, "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0") + "@0xgenesisA";
+  const b = contractScope(31337, "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0") + "@0xgenesisB";
+  for (let i = 1; i <= 5; i++) l.recordPayment({ contract: a, dealId: `0x${i}`, checkNo: 1, exporter: "0xE", payTo: "0.0.1", amount: 1n, at: 0 });
+  assert.equal(l.exporterChecksOnDay("0xe", 0, a), 5);
+  assert.equal(l.exporterChecksOnDay("0xe", 0, b), 0);
+});

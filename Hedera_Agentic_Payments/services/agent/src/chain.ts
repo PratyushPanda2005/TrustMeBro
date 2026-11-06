@@ -34,7 +34,9 @@ export interface DealStatus {
 /** DEAL_STATE number → name, for logs. */
 export const stateName = (s: number) => Object.entries(DEAL_STATE).find(([, v]) => v === s)?.[0] ?? `state ${s}`;
 
-export type RelayResult = { ok: true; txHash: string; outcome: RelayOutcome; trust?: TrustUpdate } | { ok: false; error: string };
+export type RelayResult =
+  | { ok: true; txHash: string; outcome: RelayOutcome; trust?: TrustUpdate; /** contract events in the receipt */ events?: string[]; block?: bigint }
+  | { ok: false; error: string };
 
 export interface ChainAdapter {
   readonly tradeDeals: string;

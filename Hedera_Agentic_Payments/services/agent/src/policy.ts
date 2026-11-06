@@ -52,7 +52,7 @@ export function evaluate(q: Quote, p: Policy, ledger: SpendLedger, nowMs: number
   if (ledger.spentOnDay(nowMs) + q.amount > p.maxPerDay) {
     return { decision: "deny", reason: `daily budget ${fmt(p.maxPerDay)} USDC exceeded` };
   }
-  if (ledger.exporterChecksOnDay(q.exporter, nowMs) >= p.maxChecksPerExporterPerDay) {
+  if (ledger.exporterChecksOnDay(q.exporter, nowMs, q.contract) >= p.maxChecksPerExporterPerDay) {
     return { decision: "deny", reason: `max ${p.maxChecksPerExporterPerDay} checks per exporter per day reached` };
   }
   return { decision: "allow", reason: `ok: check ${q.checkNo}, ${fmt(q.amount)} USDC to ${q.payTo}` };

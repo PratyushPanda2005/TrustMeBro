@@ -49,13 +49,16 @@ export function chainTarget(env: NodeJS.ProcessEnv = process.env): ChainTarget {
       relayerKey: dep.wallets.agent.privateKey,
     };
   }
-  const verifierKey = env.VERIFIER_EVM_PRIVATE_KEY ?? need("VERIFIER_EVM_PRIVATE_KEY");
+  // The agent only needs the verifier's address (lane C's verifier holds the key). The key is accepted
+  // as a fallback for our own demo verifier, which runs from the same .env.
+  const expectedSigner = (env.VERIFIER_ADDRESS as Hex | undefined)
+    ?? privateKeyToAccount((env.VERIFIER_EVM_PRIVATE_KEY ?? need("VERIFIER_ADDRESS")) as Hex).address;
   return {
     kind: "whitechain",
     chainId: WHITECHAIN_CHAIN_ID,
     rpcUrl: env.WHITECHAIN_RPC ?? WHITECHAIN_RPC,
     tradeDeals: tradeDealsOrPlaceholder() as Hex,
-    expectedSigner: privateKeyToAccount(verifierKey as Hex).address,
+    expectedSigner,
     relayerKey: env.RELAYER_PRIVATE_KEY as Hex | undefined,
   };
 }

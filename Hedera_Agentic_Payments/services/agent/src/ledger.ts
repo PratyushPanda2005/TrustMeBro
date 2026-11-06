@@ -97,10 +97,11 @@ export class SpendLedger {
     return this.payments.filter((p) => utcDay(p.at) === d).reduce((s, p) => s + p.amount, 0n);
   }
 
-  exporterChecksOnDay(exporter: string, nowMs: number): number {
+  /** Checks paid today for this exporter's deals on this deployment (the same address elsewhere is someone else's activity). */
+  exporterChecksOnDay(exporter: string, nowMs: number, contract = ""): number {
     this.load();
     const d = utcDay(nowMs);
-    return this.payments.filter((p) => p.exporter && same(p.exporter, exporter) && utcDay(p.at) === d).length;
+    return this.payments.filter((p) => p.exporter && same(p.exporter, exporter) && same(p.contract ?? "", contract) && utcDay(p.at) === d).length;
   }
 
   /** Returns the existing pending request for the same payment instead of duplicating it. */

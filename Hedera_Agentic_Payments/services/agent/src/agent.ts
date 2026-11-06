@@ -18,7 +18,7 @@ export interface AgentDeps {
 }
 
 export type ProcessOutcome =
-  | { outcome: RelayOutcome; checkNo: number; txHash: string; hederaTxId?: string; trust?: TrustUpdate }
+  | { outcome: RelayOutcome; checkNo: number; txHash: string; hederaTxId?: string; trust?: TrustUpdate; events?: string[] }
   | { outcome: "relay_failed" | "skipped" | Exclude<BuyResult["status"], "verified">; checkNo: number; reason: string };
 
 /** Seconds after verifyDeadline for the last check, so its observedAt is clearly past the deadline. */
@@ -82,12 +82,12 @@ export async function processClaim(e: ClaimedEvent, checkNo: number, d: AgentDep
   await d.audit({
     kind: "relayed",
     dealId: e.dealId,
-    reason: `check ${checkNo} → ${describe(t, relay.outcome)}; paid in Hedera tx ${bought.settlement.txId ?? "?"}`,
+    reason: `check ${checkNo} → ${describe(t, relay.outcome)}${relay.events?.length ? `; events ${relay.events.join(", ")}` : ""}; paid in Hedera tx ${bought.settlement.txId ?? "?"}`,
     // Option A record (plan v5 §8): {dealId, hederaTxId, payer, sigHash, whitechainTx}
     payment,
     sigHash: sig,
     whitechainTx: relay.txHash,
     trust: t && { exporter: t.exporter, outcome: t.outcome, beforeBps: t.beforeBps, afterBps: t.afterBps },
   });
-  return { outcome: relay.outcome, checkNo, txHash: relay.txHash, hederaTxId: bought.settlement.txId, trust: t };
+  return { outcome: relay.outcome, checkNo, txHash: relay.txHash, hederaTxId: bought.settlement.txId, trust: t, events: relay.events };
 }
