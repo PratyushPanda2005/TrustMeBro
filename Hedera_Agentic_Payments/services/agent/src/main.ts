@@ -1,68 +1,56 @@
 /**
- * The autonomous TrustMeBro agent (no human in the payment path).
- *   1. catch up on shipped deals, then watch ShipmentDeclared on Whitechain
- *   2. per shipment: spending gate → x402 payment on Hedera → signed check → relay to Whitechain
- *   3. every decision is written to the HCS audit topic
- *   4. over-cap prices wait for a human via the approvals API (dashboard button)
+ * The autonomous TrustMeBro agent, plan v5 §3 steps 5–6 and §9 (no human in the payment path).
+ *   1. catch up on deals still Claimed/Pending, then watch `Claimed` on Whitechain
+ *   2. per claim: spending gate → x402 payment on Hedera → signed facts → relay to TradeDeals
+ *   3. the contract decides: Verified / Rejected / Mismatch, or Pending → the agent rechecks
+ *      later as the next check (max 3 per deal)
+ *   4. every step goes to the HCS audit topic (Agent Kit), incl. {hederaTxId, payer, sigHash, whitechainTx}
+ *   5. over-cap prices wait for a human via the approvals API (dashboard button)
  * Run: pnpm agent   (CHAIN_ADAPTER=mock until lane C deploys; then whitechain)
  */
 import { join } from "node:path";
-import { privateKeyToAccount } from "viem/accounts";
-import { recoverVerificationSigner, verificationHash, fromJson } from "@tmb/shared/sign";
 import { hashscanTopic, type Hex } from "@tmb/shared";
-import { AuditLog, HcsSink, ConsoleSink } from "@tmb/audit";
+import { AuditLog, auditTailFile, makeAuditSink } from "@tmb/audit";
 import { buyVerification } from "./buy.ts";
-import { processShipment } from "./agent.ts";
-import { MockChainAdapter, type ChainAdapter, type ShipmentDeclared } from "./chain.ts";
+import { processClaim, shouldRecheck } from "./agent.ts";
+import { MockChainAdapter, type ChainAdapter, type ClaimedEvent } from "./chain.ts";
 import { WhitechainAdapter } from "./whitechain.ts";
-import { SpendLedger } from "./ledger.ts";
-import { makePayFetch } from "./payer.ts";
 import { startApi } from "./api.ts";
-import { loadPolicy, need, tradeDealsOrPlaceholder } from "./config.ts";
+import { need, tradeDealsOrPlaceholder } from "./config.ts";
+import { demoClaim, liveBuyDeps } from "./live.ts";
 
 const STATE = join(process.cwd(), ".state");
-const policy = loadPolicy();
-const ledger = new SpendLedger(join(STATE, "ledger.json"));
-const expectedSigner = privateKeyToAccount(need("VERIFIER_EVM_PRIVATE_KEY") as Hex).address;
-const verifierUrl = (process.env.VERIFIER_URL ?? "http://localhost:4021") + "/verify";
-
 const topic = process.env.AUDIT_TOPIC_ID;
-const audit = new AuditLog(
-  topic && process.env.AUDIT_OPERATOR_ID && process.env.AUDIT_OPERATOR_KEY
-    ? new HcsSink(topic, process.env.AUDIT_OPERATOR_ID, process.env.AUDIT_OPERATOR_KEY)
-    : new ConsoleSink(),
-  join(STATE, "audit-tail.json"),
-);
+// HCS writer: Hedera Agent Kit consensus tools by default, AUDIT_SINK=sdk for plain @hiero-ledger/sdk.
+const { sink, kind: auditSink } = makeAuditSink();
+const audit = new AuditLog(sink, auditTailFile(STATE, topic));
+const auditWrite = async (e: any) => { await audit.write(e); console.log(`[agent] ${e.kind.padEnd(13)} ${e.reason}`); };
 
 const chain: ChainAdapter = process.env.CHAIN_ADAPTER === "whitechain"
   ? new WhitechainAdapter(need("TRADE_DEALS_ADDRESS") as Hex, need("RELAYER_PRIVATE_KEY") as Hex, BigInt(process.env.WHITECHAIN_FROM_BLOCK ?? 0))
   : new MockChainAdapter(tradeDealsOrPlaceholder());
 
 // Signs only the exact quote the spending gate approved (including human-approved over-cap prices).
-const payFetch = makePayFetch({ accountId: need("AGENT_HEDERA_ACCOUNT_ID"), privateKey: need("AGENT_HEDERA_PRIVATE_KEY") });
-const auditWrite = async (e: any) => { await audit.write(e); console.log(`[agent] ${e.kind.padEnd(13)} ${e.reason}`); };
+const buyDeps = liveBuyDeps(auditWrite);
+const maxChecks = buyDeps.policy.maxChecksPerDeal;
+const recheckDelayMs = Number(process.env.RECHECK_DELAY_SEC ?? 20) * 1000;
+const deps = { chain, audit: auditWrite, buy: (req: any, ctx: any) => buyVerification(req, ctx, buyDeps) };
 
-const deps = {
-  chain,
-  audit: auditWrite,
-  verificationHash: (r: any) => verificationHash(fromJson(r.verification)),
-  buy: (req: any, stage: any) => buyVerification(req, stage, {
-    url: verifierUrl, policy, ledger, now: Date.now, expectedSigner, fetch, payFetch,
-    recoverSigner: recoverVerificationSigner, audit: auditWrite,
-  }),
-};
-
-// One deal at a time per dealId (no double processing from catch-up + live events).
+// One check at a time per deal (no double processing from catch-up + live events + rechecks).
 const inflight = new Set<string>();
-const known = new Map<string, ShipmentDeclared>();
-async function handle(e: ShipmentDeclared) {
+const known = new Map<string, ClaimedEvent>();
+async function handle(e: ClaimedEvent, checkNo: number) {
   const id = e.dealId.toLowerCase();
   known.set(id, e);
   if (inflight.has(id)) return;
   inflight.add(id);
   try {
-    const r = await processShipment(e, deps);
-    console.log(`[agent] deal ${e.dealId.slice(0, 10)}… → ${r.outcome}`);
+    const r = await processClaim(e, checkNo, deps);
+    console.log(`[agent] deal ${e.dealId.slice(0, 10)}… check ${checkNo} → ${r.outcome}`);
+    if (shouldRecheck(r.outcome, checkNo, maxChecks)) {
+      await auditWrite({ kind: "recheck", dealId: e.dealId, reason: `tracking lag: check ${checkNo + 1} of ${maxChecks} in ${recheckDelayMs / 1000}s` });
+      setTimeout(() => void handle(e, checkNo + 1), recheckDelayMs);
+    }
   } catch (err) {
     await auditWrite({ kind: "error", dealId: e.dealId, reason: `unexpected: ${(err as Error).message}` });
   } finally {
@@ -72,23 +60,20 @@ async function handle(e: ShipmentDeclared) {
 
 await startApi({
   port: Number(process.env.AGENT_API_PORT ?? 4002),
-  ledger,
+  ledger: buyDeps.ledger,
   token: process.env.AGENT_API_TOKEN,
   onApproved: async (a) => {
-    await auditWrite({ kind: "approved", dealId: a.dealId, reason: `human approved ${a.amount} to ${a.payTo}` });
-    // Retry the deal: the gate now sees the approval, and payFetch pins the approved amount.
+    await auditWrite({ kind: "approved", dealId: a.dealId, reason: `human approved ${a.amount} to ${a.payTo} for check ${a.checkNo}` });
+    // Retry that check: the gate now sees the approval, and payFetch pins the approved amount.
     const e = known.get(a.dealId.toLowerCase());
-    if (e) await handle(e);
-    else console.log(`[agent] approval ${a.id}: deal ${a.dealId.slice(0, 10)}… not seen since start; it is retried when the shipment event arrives`);
+    if (e) await handle(e, a.checkNo);
+    else console.log(`[agent] approval ${a.id}: deal ${a.dealId.slice(0, 10)}… not seen since start; it is retried when the claim is seen again`);
   },
 });
 
-console.log(`TrustMeBro agent: adapter=${process.env.CHAIN_ADAPTER ?? "mock"} verifier=${verifierUrl} audit=${topic ? hashscanTopic(topic) : "console"}`);
-for (const e of await chain.pendingShipments()) await handle(e);
-chain.watchShipments((e) => void handle(e));
+console.log(`TrustMeBro agent: adapter=${process.env.CHAIN_ADAPTER ?? "mock"} verifier=${buyDeps.url} tradeDeals=${chain.tradeDeals} audit=${auditSink === "console" ? "console" : `${hashscanTopic(topic!)} via ${auditSink}`}`);
+for (const { claim, checks } of await chain.openClaims()) await handle(claim, checks + 1);
+chain.watchClaims((e) => void handle(e, 1));
 
-// Mock mode: emit a demo shipment so the full Hedera leg can be exercised before contracts exist.
-if (chain instanceof MockChainAdapter && process.env.MOCK_DEMO_SHIPMENT !== "0") {
-  const { randomBytes } = await import("node:crypto");
-  chain.emit({ dealId: `0x${randomBytes(32).toString("hex")}`, exporter: "0x" + "22".repeat(20), claims: { weight: true, statusCode: true, documents: true }, containerNo: "MSKU1234567", blRef: "BL-DEMO-001" });
-}
+// Mock mode: the demo exporter declares plan v5 §4's shipment, so the Hedera leg runs before contracts exist.
+if (chain instanceof MockChainAdapter && process.env.MOCK_DEMO_SHIPMENT !== "0") chain.emit(demoClaim());

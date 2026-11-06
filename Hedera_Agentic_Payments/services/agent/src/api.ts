@@ -16,7 +16,7 @@ export interface ApiDeps {
 }
 
 const toJson = (a: ApprovalRecord) => ({
-  id: a.id, dealId: a.dealId, stage: a.stage, payTo: a.payTo, amount: a.amount.toString(),
+  id: a.id, dealId: a.dealId, checkNo: a.checkNo, payTo: a.payTo, amount: a.amount.toString(),
   reason: a.reason, status: a.status, createdAt: new Date(a.at).toISOString(),
 });
 
