@@ -14,7 +14,7 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { HTTPFacilitatorClient } from "@x402/core/server";
 import { ExactHederaScheme } from "@x402/hedera/exact/server";
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
-import { HEDERA_NETWORK, VERIFY_PRICE, type Hex } from "@tmb/shared";
+import { HEDERA_NETWORK, VERIFY_PRICE, tradeDealsOrPlaceholder, type Hex } from "@tmb/shared";
 import { signVerification } from "@tmb/shared/sign";
 import { handleVerify } from "./handler.ts";
 import { ScenarioBook, NonceSource, isScenario, SCENARIOS, priceFor, dealIdOf } from "./observe.ts";
@@ -34,34 +34,30 @@ const OVERCHARGE_PRICE = process.env.OVERCHARGE_PRICE ?? "$5.00";
 const PORT = Number(process.env.VERIFIER_PORT ?? 4021);
 const ADMIN_TOKEN = process.env.VERIFIER_ADMIN_TOKEN ?? "dev-admin";
 const TTL_SEC = Number(process.env.VERIFY_TTL_SEC ?? 600);
+// EIP-712 verifyingContract: the TradeDeals whose verifier() is this key (placeholder until lane C deploys).
+const TRADE_DEALS = tradeDealsOrPlaceholder();
 
 const book = new ScenarioBook((process.env.VERIFIER_SCENARIO as any) ?? "honest");
 const nonces = new NonceSource();
 
+// Bazaar discovery (plan v5 §8): body is {dealId, shipmentRef}; the claims stay on chain.
 const bazaar = declareDiscoveryExtension({
   bodyType: "json",
-  input: {
-    dealId: "0x" + "ab".repeat(32),
-    tradeDeals: "0x" + "11".repeat(20),
-    claims: { weight: true, status_code: true, document_verification: true },
-    shipment: { containerNo: "MSKU1234567", blRef: "BL-001" },
-  },
+  input: { dealId: "0x" + "00".repeat(31) + "01", shipmentRef: { containerNo: "MSKU1234567", blRef: "BL-001" } },
   inputSchema: {
     properties: {
-      dealId: { type: "string", pattern: "^0x[0-9a-fA-F]{64}$" },
-      tradeDeals: { type: "string", pattern: "^0x[0-9a-fA-F]{40}$" },
-      claims: {
+      dealId: { type: "string", pattern: "^0x[0-9a-fA-F]{64}$", description: "TradeDeals uint256 deal id as bytes32" },
+      shipmentRef: {
         type: "object",
-        properties: { weight: { type: "boolean" }, status_code: { type: "boolean" }, document_verification: { type: "boolean" } },
-        required: ["weight", "status_code", "document_verification"],
+        properties: { containerNo: { type: "string", maxLength: 32 }, blRef: { type: "string", maxLength: 64 } },
+        required: ["containerNo"],
       },
-      shipment: { type: "object", properties: { containerNo: { type: "string" }, blRef: { type: "string" } }, required: ["containerNo"] },
     },
-    required: ["dealId", "tradeDeals", "claims", "shipment"],
+    required: ["dealId", "shipmentRef"],
   },
   output: {
     example: {
-      verification: { dealId: "0x…", weight: true, statusCode: true, documents: true, nonce: "1", expiry: "1762430000" },
+      verification: { dealId: "0x…", observedKg: 9850, statusCode: 4, docHash: "0x…", observedAt: "1800000000", nonce: "1", expiry: "1800000600" },
       signature: "0x…", signer: "0x…", chainId: 1874, verifyingContract: "0x…",
     },
   },
@@ -74,7 +70,7 @@ const routeConfig = {
       // express.json() runs first, so the body (and its dealId) is available here.
       price: (ctx: { adapter: { getBody?(): unknown } }) => priceFor(book.for(dealIdOf(ctx.adapter.getBody?.())), PRICE, OVERCHARGE_PRICE),
     }],
-    description: "TrustMeBro shipment verification: observed {weight, status_code, document_verification}, EIP-712 signed for Whitechain",
+    description: "Observed shipment facts (weighbridge kg, carrier status, eBL doc hash) for a TrustMeBro deal, EIP-712 signed for Whitechain 1874",
     mimeType: "application/json",
     serviceName: "TrustMeBro Verifier",
     tags: ["trade-finance", "verification", "rwa"],
@@ -95,7 +91,7 @@ app.get("/.well-known/x402.json", (_req, res) => {
     endpoints: [{ method: "POST", path: "/verify", price: PRICE, network: HEDERA_NETWORK, payTo: PAY_TO, facilitator: FACILITATOR_URL }],
   });
 });
-app.get("/health", (_req, res) => res.json({ ok: true, price: PRICE, payTo: PAY_TO }));
+app.get("/health", (_req, res) => res.json({ ok: true, price: PRICE, payTo: PAY_TO, tradeDeals: TRADE_DEALS }));
 
 // Demo panel (dashboard → /api/scenario → here). Not paywalled; token-protected.
 app.get("/admin/scenario", (_req, res) => res.json({ scenarios: SCENARIOS, ...book.snapshot() }));
@@ -113,7 +109,7 @@ app.post("/verify", async (req, res) => {
   // Express 4 does not catch async errors: an unhandled rejection would crash the verifier.
   // A 500 is >= 400, so x402 does not settle and the agent is not charged.
   const r = await handleVerify(req.body, {
-    book, nonces, ttlSec: TTL_SEC,
+    book, nonces, ttlSec: TTL_SEC, tradeDeals: TRADE_DEALS,
     nowSec: () => Math.floor(Date.now() / 1000),
     sign: (tradeDeals, v) => signVerification(SIGNER_KEY, tradeDeals, v),
   }).catch((err: Error) => ({ status: 500, json: { error: "internal_error", message: err.message } }));
@@ -122,5 +118,5 @@ app.post("/verify", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`TrustMeBro verifier on :${PORT}  price=${PRICE}  payTo=${PAY_TO}  facilitator=${FACILITATOR_URL}`);
+  console.log(`TrustMeBro verifier on :${PORT}  price=${PRICE}  payTo=${PAY_TO}  tradeDeals=${TRADE_DEALS}  facilitator=${FACILITATOR_URL}`);
 });

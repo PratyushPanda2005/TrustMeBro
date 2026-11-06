@@ -1,20 +1,24 @@
 /**
- * What the verification service "observes" about a shipment.
- * Hackathon honesty: real carriers, weighbridges and customs don't sell data over
- * x402 yet, so observations come from named demo scenarios. The README says so.
+ * What the verification service "observes" about a shipment (plan v5 §4): the terminal
+ * weighbridge reading, the carrier's tracking status and the hash of the carrier-issued eBL
+ * bundle. Hackathon honesty: real weighbridges, carriers and eBL platforms don't sell data over
+ * x402 yet, so this is a simulated source driven by named demo scenarios. The README says so.
+ *
+ * The verifier never sees the exporter's claims. It reports facts; the contract judges.
  */
-import type { Checks, Verification, Hex } from "@tmb/shared";
+import { STATUS, demoDocHash, forgedDocHash, type Hex, type Verification } from "@tmb/shared";
 
-export const SCENARIOS = ["honest", "fake-weight", "fake-status", "fake-docs", "outage", "overcharge"] as const;
+export const SCENARIOS = ["honest", "lag", "short-weight", "fake-docs", "outage", "overcharge"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 export function isScenario(x: unknown): x is Scenario {
   return typeof x === "string" && (SCENARIOS as readonly string[]).includes(x);
 }
 
-/** Default scenario plus optional per-deal overrides (set from the dashboard demo panel). */
+/** Default scenario, per-deal overrides (dashboard demo panel), and a per-deal check counter. */
 export class ScenarioBook {
   private perDeal = new Map<string, Scenario>();
+  private checks = new Map<string, number>();
   constructor(private fallback: Scenario) {
     if (!isScenario(fallback)) throw new Error(`unknown scenario ${fallback}`);
   }
@@ -26,18 +30,41 @@ export class ScenarioBook {
   for(dealId: string): Scenario {
     return this.perDeal.get(dealId.toLowerCase()) ?? this.fallback;
   }
+  /** 1 for the first paid check of a deal, 2 for the recheck, … (drives the `lag` scenario). */
+  nextCheck(dealId: string): number {
+    const n = (this.checks.get(dealId.toLowerCase()) ?? 0) + 1;
+    this.checks.set(dealId.toLowerCase(), n);
+    return n;
+  }
   snapshot() {
     return { default: this.fallback, perDeal: Object.fromEntries(this.perDeal) };
   }
 }
 
-/** Observed facts for a scenario. `outage` is handled by the server (503, not charged). */
-export function observe(s: Exclude<Scenario, "outage"> | Scenario): Checks {
-  return {
-    weight: s !== "fake-weight",
-    statusCode: s !== "fake-status",
-    documents: s !== "fake-docs",
-  };
+export interface Observed {
+  observedKg: number;
+  statusCode: number;
+  docHash: Hex;
+}
+
+/**
+ * The simulated weighbridge / carrier / eBL reading for a container on its n-th check.
+ * Values are plan v5 §4's example table. `outage` is handled by the handler (503, not charged).
+ */
+export function observe(s: Scenario, containerNo: string, checkNo: number): Observed {
+  const docA = demoDocHash(containerNo);
+  switch (s) {
+    case "lag":
+      return checkNo <= 1
+        ? { observedKg: 10_020, statusCode: STATUS.GATED_IN, docHash: docA } // tracking lag
+        : { observedKg: 10_020, statusCode: STATUS.DEPARTED, docHash: docA };
+    case "short-weight":
+      return { observedKg: 8_020, statusCode: STATUS.LOADED, docHash: docA }; // overclaimed goods
+    case "fake-docs":
+      return { observedKg: 10_000, statusCode: STATUS.LOADED, docHash: forgedDocHash(containerNo) };
+    default: // honest, overcharge (greedy merchant, honest data), outage (never reached)
+      return { observedKg: 9_850, statusCode: STATUS.DEPARTED, docHash: docA };
+  }
 }
 
 /**
@@ -66,8 +93,7 @@ export class NonceSource {
   }
 }
 
-export function buildVerification(
-  dealId: Hex, observed: Checks, nonces: NonceSource, nowSec: number, ttlSec: number,
-): Verification {
-  return { dealId, ...observed, nonce: nonces.next(), expiry: BigInt(nowSec + ttlSec) };
+/** Signed message: observedAt = the verifier's clock now (the contract requires > claimTime). */
+export function buildVerification(dealId: Hex, o: Observed, nonces: NonceSource, nowSec: number, ttlSec: number): Verification {
+  return { dealId, ...o, observedAt: BigInt(nowSec), nonce: nonces.next(), expiry: BigInt(nowSec + ttlSec) };
 }
