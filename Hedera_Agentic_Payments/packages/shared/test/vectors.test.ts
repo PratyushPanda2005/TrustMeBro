@@ -15,11 +15,14 @@ test("committed vectors match a fresh generation (no drift from the reference ma
   assert.equal(readFileSync(file, "utf8"), committed);
 });
 
-test("vectors contain the plan's headline numbers", () => {
+test("vectors contain plan v5's headline numbers", () => {
   const v = JSON.parse(readFileSync(join(root, "vectors", "trust.json"), "utf8"));
-  const five = v.exporter.find((e: any) => e.name === "five honest deals");
-  assert.deepEqual(five.steps.map((x: any) => x.score), ["6666", "7500", "8000", "8333", "8571"]);
-  assert.equal(v.exporter.find((e: any) => e.name === "fake weight from new").steps[0].score, "2631");
-  const pdf = v.waterfall.find((w: any) => w.name === "veteran pair (PDF example)");
-  assert.equal(pdf.investors, "27540000000");
+  assert.equal(v.version, 5);
+  const five = v.exporter.find((e: any) => e.name === "five honest settled deals");
+  assert.deepEqual(five.steps.map((x: any) => x.trust), ["6667", "7500", "8000", "8333", "8571"]);
+  assert.equal(v.exporter.find((e: any) => e.name === "fake weight from new").steps[0].trust, "2632");
+  assert.equal(v.importer.find((e: any) => e.name === "new importer").start.riskBps, "400");
+  const q = v.quotes.find((x: any) => x.name.startsWith("§6.3"));
+  assert.deepEqual([q.quote.exporterNet, q.toInvestor, q.toExporter], ["69300000000", "72800000000", "27200000000"]);
+  assert.deepEqual(v.checks.map((c: any) => c.outcome), ["Verified", "Pending", "Falsified", "Falsified", "Mismatch", "Falsified"]);
 });
