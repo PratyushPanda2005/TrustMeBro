@@ -1,13 +1,14 @@
-/** Agent spend ledger + human-approval queue, persisted as JSON (bigints as strings). */
+/** Agent spend ledger + human-approval queue, persisted as JSON (bigints as strings). Plan v5 §9. */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
-export type Stage = "departure" | "arrival";
-
 export interface PaymentRecord {
   dealId: string;
-  stage: Stage;
+  /** 1 for the first paid check of a deal, 2–3 for rechecks while the contract says Pending. */
+  checkNo: number;
+  /** For the per-exporter daily cap ("" for records written before v5). */
+  exporter: string;
   payTo: string;
   amount: bigint;
   at: number; // ms epoch
@@ -17,7 +18,7 @@ export interface PaymentRecord {
 export interface ApprovalRecord {
   id: string;
   dealId: string;
-  stage: Stage;
+  checkNo: number;
   payTo: string;
   amount: bigint;
   reason: string;
@@ -26,7 +27,10 @@ export interface ApprovalRecord {
 }
 
 const utcDay = (ms: number) => Math.floor(ms / 86_400_000);
-const key = (dealId: string, stage: Stage) => `${dealId.toLowerCase()}:${stage}`;
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const key = (dealId: string, checkNo: number) => `${dealId.toLowerCase()}:${checkNo}`;
+/** v4 records carried a stage instead of a check number: they count as the deal's first check. */
+const upgrade = (x: any) => ({ ...x, checkNo: x.checkNo ?? 1, exporter: x.exporter ?? "", amount: BigInt(x.amount) });
 
 export class SpendLedger {
   private payments: PaymentRecord[] = [];
@@ -44,8 +48,8 @@ export class SpendLedger {
   private load() {
     if (!this.file || !existsSync(this.file)) return;
     const raw = JSON.parse(readFileSync(this.file, "utf8"));
-    this.payments = raw.payments.map((p: any) => ({ ...p, amount: BigInt(p.amount) }));
-    this.approvals = raw.approvals.map((a: any) => ({ ...a, amount: BigInt(a.amount) }));
+    this.payments = raw.payments.map(upgrade);
+    this.approvals = raw.approvals.map(upgrade);
   }
 
   private save() {
@@ -61,14 +65,19 @@ export class SpendLedger {
     this.save();
   }
 
-  alreadyPaid(dealId: string, stage: Stage): boolean {
+  alreadyPaid(dealId: string, checkNo: number): boolean {
     this.load();
-    return this.payments.some((p) => key(p.dealId, p.stage) === key(dealId, stage));
+    return this.payments.some((p) => key(p.dealId, p.checkNo) === key(dealId, checkNo));
+  }
+
+  checksPaid(dealId: string): number {
+    this.load();
+    return this.payments.filter((p) => same(p.dealId, dealId)).length;
   }
 
   spentOnDeal(dealId: string): bigint {
     this.load();
-    return this.payments.filter((p) => p.dealId.toLowerCase() === dealId.toLowerCase()).reduce((s, p) => s + p.amount, 0n);
+    return this.payments.filter((p) => same(p.dealId, dealId)).reduce((s, p) => s + p.amount, 0n);
   }
 
   spentOnDay(nowMs: number): bigint {
@@ -77,11 +86,17 @@ export class SpendLedger {
     return this.payments.filter((p) => utcDay(p.at) === d).reduce((s, p) => s + p.amount, 0n);
   }
 
+  exporterChecksOnDay(exporter: string, nowMs: number): number {
+    this.load();
+    const d = utcDay(nowMs);
+    return this.payments.filter((p) => p.exporter && same(p.exporter, exporter) && utcDay(p.at) === d).length;
+  }
+
   /** Returns the existing pending request for the same payment instead of duplicating it. */
   requestApproval(a: Omit<ApprovalRecord, "id" | "status">): string {
     this.load();
     const existing = this.approvals.find(
-      (x) => x.status === "pending" && key(x.dealId, x.stage) === key(a.dealId, a.stage) && x.payTo === a.payTo && x.amount === a.amount,
+      (x) => x.status === "pending" && key(x.dealId, x.checkNo) === key(a.dealId, a.checkNo) && x.payTo === a.payTo && x.amount === a.amount,
     );
     if (existing) return existing.id;
     const id = randomUUID();
@@ -99,11 +114,11 @@ export class SpendLedger {
     this.save();
   }
 
-  /** Latest decision for this exact payment (deal, stage, payTo, amount). */
-  approvalFor(dealId: string, stage: Stage, payTo: string, amount: bigint): ApprovalRecord["status"] | undefined {
+  /** Latest decision for this exact payment (deal, check, payTo, amount). */
+  approvalFor(dealId: string, checkNo: number, payTo: string, amount: bigint): ApprovalRecord["status"] | undefined {
     this.load();
     const matches = this.approvals.filter(
-      (x) => key(x.dealId, x.stage) === key(dealId, stage) && x.payTo === payTo && x.amount === amount,
+      (x) => key(x.dealId, x.checkNo) === key(dealId, checkNo) && x.payTo === payTo && x.amount === amount,
     );
     return matches.at(-1)?.status;
   }

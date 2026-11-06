@@ -13,11 +13,11 @@ test("two processes sharing one ledger file keep both payments (no lost update)"
     const a = new SpendLedger(file);
     const b = new SpendLedger(file);
     const at = Date.parse("2026-11-06T10:00:00Z");
-    a.recordPayment({ dealId: "0x01", stage: "departure", payTo: "0.0.5005", amount: 300000n, at, hederaTxId: "tx-a" });
-    b.recordPayment({ dealId: "0x02", stage: "departure", payTo: "0.0.5005", amount: 300000n, at, hederaTxId: "tx-b" });
+    a.recordPayment({ dealId: "0x01", checkNo: 1, exporter: "0xe1", payTo: "0.0.5005", amount: 300000n, at, hederaTxId: "tx-a" });
+    b.recordPayment({ dealId: "0x02", checkNo: 1, exporter: "0xe1", payTo: "0.0.5005", amount: 300000n, at, hederaTxId: "tx-b" });
 
     assert.equal(a.spentOnDay(at), 600000n, "process A sees B's payment for the daily cap");
-    assert.equal(a.alreadyPaid("0x02", "departure"), true);
+    assert.equal(a.alreadyPaid("0x02", 1), true);
     assert.equal(new SpendLedger(file).spentOnDay(at), 600000n, "file holds both");
   } finally {
     rmSync(dir, { recursive: true, force: true });
