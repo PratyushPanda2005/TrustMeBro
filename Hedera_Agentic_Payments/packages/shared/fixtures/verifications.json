@@ -1,0 +1,93 @@
+{
+  "verifier": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "impostor": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+  "verifyingContract": "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f",
+  "chainId": 1874,
+  "note": "Foundry: vm.chainId(1874) and deploy TradeDeals at verifyingContract (or regenerate with FIXTURE_DEALS). 'reused' = submit valid_all_true twice.",
+  "cases": {
+    "valid_all_true": {
+      "verification": {
+        "dealId": "0xabababababababababababababababababababababababababababababababab",
+        "weight": true,
+        "statusCode": true,
+        "documents": true,
+        "nonce": "1",
+        "expiry": "4102444800"
+      },
+      "signature": "0x155af0cf608c1c603dae4e099ada26e1a7cb84beb550f9e9033db84722544b07574de02b531e1c1ce39496d9566501634a727cfe6dd55b42c0fcd3eba60bcc9d1c",
+      "signer": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "chainId": 1874,
+      "verifyingContract": "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f"
+    },
+    "valid_weight_false": {
+      "verification": {
+        "dealId": "0xabababababababababababababababababababababababababababababababab",
+        "weight": false,
+        "statusCode": true,
+        "documents": true,
+        "nonce": "2",
+        "expiry": "4102444800"
+      },
+      "signature": "0x7eb94b6d43027674b0b0e74e711dcf31fc7e45cdd036433e72abe585f13647c5682daa8a49acb9cb61f096d3e9cc6d51a1b56a4379fe190c5f79ee40dbbab2311b",
+      "signer": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "chainId": 1874,
+      "verifyingContract": "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f"
+    },
+    "valid_docs_false": {
+      "verification": {
+        "dealId": "0xabababababababababababababababababababababababababababababababab",
+        "weight": true,
+        "statusCode": true,
+        "documents": false,
+        "nonce": "3",
+        "expiry": "4102444800"
+      },
+      "signature": "0xd34864aef617663ef503882fab1392b68e2e68910b5e4e50e484a210f38daaf508d940fa035b7316dc2c0aa61df735b5ae613d4b0c34b707d630b07d7c95e40b1b",
+      "signer": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "chainId": 1874,
+      "verifyingContract": "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f"
+    },
+    "expired": {
+      "verification": {
+        "dealId": "0xabababababababababababababababababababababababababababababababab",
+        "weight": true,
+        "statusCode": true,
+        "documents": true,
+        "nonce": "4",
+        "expiry": "1"
+      },
+      "signature": "0x4ac2b94a1b8acadbef450e167f217c89044500575349288acfab081d950b0648156f4108a765a04d1e262baef2649d43cbd0ac67e49eb253b472a698a86afc191b",
+      "signer": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "chainId": 1874,
+      "verifyingContract": "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f"
+    },
+    "wrong_signer": {
+      "verification": {
+        "dealId": "0xabababababababababababababababababababababababababababababababab",
+        "weight": true,
+        "statusCode": true,
+        "documents": true,
+        "nonce": "5",
+        "expiry": "4102444800"
+      },
+      "signature": "0xaa4ee36909894b89eb15065a8a55983e2091863902195985188e1e8bdac5788705f6fb4000d20a5797d9ca345f49c92ddd38b1457136a2f008a6b06eefb4df491b",
+      "signer": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "chainId": 1874,
+      "verifyingContract": "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f"
+    },
+    "wrong_contract": {
+      "verification": {
+        "dealId": "0xabababababababababababababababababababababababababababababababab",
+        "weight": true,
+        "statusCode": true,
+        "documents": true,
+        "nonce": "6",
+        "expiry": "4102444800"
+      },
+      "signature": "0xbc4224b5019524c35ea18c78c37245f037c3a323e6441b3b7790cb64b439220667fa9b988920208fe54e08fe49268b4d5b01a4fddeb8868373cf61d3487211e61b",
+      "signer": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "chainId": 1874,
+      "verifyingContract": "0x000000000000000000000000000000000000dEaD"
+    }
+  }
+}
