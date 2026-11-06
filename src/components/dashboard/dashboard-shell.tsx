@@ -63,7 +63,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </Suspense>
         <header className="relative flex h-16 items-center gap-2 border-b px-4">
           <SidebarTrigger />
-          <Badge variant="secondary">
+          <Badge variant="secondary" className="max-sm:hidden">
             <Radio data-icon="inline-start" />
             {connection.status === "ready"
               ? connection.state.network.name
@@ -72,6 +72,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <WalletButton />
           <Button
             variant="ghost"
+            className="max-sm:hidden"
             nativeButton={false}
             render={<Link href="/" />}
           >

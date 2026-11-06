@@ -42,6 +42,8 @@ import {
 import { readHederaAudit } from "./hedera"
 
 const LOG_RANGE = 1_500n
+/** Stays well inside the public RPC limit of 50 requests a second. */
+const LOG_BATCH = 8
 const CACHE_MS = 4_000
 
 const client = createPublicClient({
@@ -72,16 +74,21 @@ let scanned = FROM_BLOCK - 1n
 async function syncLogs() {
   const tip = await client.getBlockNumber({ cacheTime: 0 })
   while (scanned < tip) {
-    const fromBlock = scanned + 1n
-    const toBlock =
-      fromBlock + LOG_RANGE - 1n < tip ? fromBlock + LOG_RANGE - 1n : tip
-    const found = await client.getContractEvents({
-      ...finance,
-      fromBlock,
-      toBlock,
-    })
-    logs.push(...(found as unknown as Log[]))
-    scanned = toBlock
+    const ranges: [bigint, bigint][] = []
+    let from = scanned + 1n
+    while (from <= tip && ranges.length < LOG_BATCH) {
+      const to = from + LOG_RANGE - 1n < tip ? from + LOG_RANGE - 1n : tip
+      ranges.push([from, to])
+      from = to + 1n
+    }
+    // Parallel, but each batch lands whole and in order, so the cursor stays exact.
+    const found = await Promise.all(
+      ranges.map(([fromBlock, toBlock]) =>
+        client.getContractEvents({ ...finance, fromBlock, toBlock }),
+      ),
+    )
+    logs.push(...(found.flat() as unknown as Log[]))
+    scanned = ranges[ranges.length - 1][1]
   }
 }
 

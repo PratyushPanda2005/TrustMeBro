@@ -13,13 +13,14 @@
     "test": "node --import tsx --test test/scenarios.test.ts test/server.test.ts",
     "typecheck": "tsc --noEmit",
     "start:v2": "tsx src/v2-main.ts",
-    "test:v2": "tsx --test test/v2.test.ts test/v2-startup.test.ts test/v2-setup-config.test.ts test/metamask.test.ts",
+    "test:v2": "tsx --test test/v2.test.ts test/v2-startup.test.ts test/v2-setup-config.test.ts test/demo-evidence.test.ts test/metamask.test.ts",
     "start:legacy": "tsx src/index.ts",
     "check:v2": "tsx scripts/check-v2.ts",
     "dev:legacy": "tsx watch src/index.ts",
     "diagnose:v2": "tsx src/v2-main.ts --diagnose",
     "setup:v2-demo": "tsx scripts/setup-v2-demo.ts",
-    "prepare:metamask": "tsx scripts/prepare-metamask.ts"
+    "prepare:metamask": "tsx scripts/prepare-metamask.ts",
+    "demo-evidence": "tsx scripts/demo-evidence.ts"
   },
   "dependencies": {
     "@trustmebro/shared": "file:../../packages/shared",

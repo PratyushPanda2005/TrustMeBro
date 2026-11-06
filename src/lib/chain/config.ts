@@ -18,10 +18,11 @@ type Persona = Exclude<Role, "admin">
 export const RPC_URL =
   process.env.WHITECHAIN_RPC ?? "https://rpc.testnet.whitechain.io"
 
-/** The block Finance V2 was deployed in. Logs before it don't exist. */
-export const FROM_BLOCK = BigInt(
-  process.env.WHITECHAIN_FROM_BLOCK ?? 12_365_020,
-)
+/** Finance V2's deployment block. Logs before it don't exist. */
+const DEPLOYED_AT = 12_365_020n
+const configuredBlock = BigInt(process.env.WHITECHAIN_FROM_BLOCK ?? 0)
+export const FROM_BLOCK =
+  configuredBlock > DEPLOYED_AT ? configuredBlock : DEPLOYED_AT
 
 export const EXPLORER = "https://explorer.testnet.whitechain.io"
 
