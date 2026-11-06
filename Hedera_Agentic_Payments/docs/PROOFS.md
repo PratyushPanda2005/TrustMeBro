@@ -24,6 +24,34 @@ Lane C's own stack (`npm run local` in `services/verifier` at the repo root, `PA
 |---|---|---|
 | deal 1, honest | [`0.0.7162784@1793962630.360869930`](https://hashscan.io/testnet/transaction/0.0.7162784@1793962630.360869930) | PASS: observed 9,850 kg, status 4 (DEPARTED), signed for chain 31337; the verifier's forecast "Verified" is shown but ignored (the contract decides) |
 
+### Integration with lane C, step 4: full-loop e2e on lane C's contracts (`pnpm e2e:local`)
+Lane C's stack (anvil 31337, their TradeDeals/TrustRegistry and verifier, x402 on). Each case: a fresh exporter, KYC'd and onboarded at 50% → createDeal / approveDeal / declareClaims (10,000 kg, LOADED, verifyWindow 60 s) → the agent's own code per check → `submitVerification` from the agent's relayer → the contract decides. All 6 contract cases PASS, checked on the systems themselves: agent USDC on the Mirror Node (all ten payments of this step `CRYPTOTRANSFER SUCCESS`, −300000 each; 28.3 → 25.3), `getDeal` state + `falsifiedMask`, `TrustRegistry.trust(exporter)`.
+
+| Case | Hedera tx | `submitVerification` (local) | Result |
+|---|---|---|---|
+| honest | [`0.0.7162784@1793967040.098670712`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967040.098670712) | `0x9fe539b0…` | PASS: Verified; investor funded, importer paid → Settled (`0xcc85ede2…`); TrustRegistry 50.00% → 66.67% |
+| lag | [`0.0.7162784@1793967077.596254935`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967077.596254935)<br>[`0.0.7162784@1793967095.901962849`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967095.901962849) | `0xc52b5bc4…`<br>`0xb35dd6f7…` | PASS: Pending → Verified, two paid checks, no penalty |
+| short-weight | [`0.0.7162784@1793967125.946758429`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967125.946758429) | `0xa0f9dccc…` | PASS: Rejected (weight), 50.00% → 26.32% |
+| fake-docs | [`0.0.7162784@1793967139.587999784`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967139.587999784) | `0x8a39d6af…` | PASS: Rejected (documents), 50.00% → 27.03% |
+| over-weight | [`0.0.7162784@1793967156.556483243`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967156.556483243) | `0xf9c0f989…` | PASS: Mismatch, no penalty |
+| stuck | [`0.0.7162784@1793967168.153799804`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967168.153799804)<br>[`0.0.7162784@1793967193.481823410`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967193.481823410)<br>[`0.0.7162784@1793967240.728426283`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967240.728426283) | `0xb37334fa…`<br>`0x70609c42…`<br>`0x4fbccbe3…` | PASS: Pending, Pending; the last check waited for `verifyDeadline` → Rejected (status), 50.00% → 28.57% |
+| HCS audit | [`0.0.11336190`](https://hashscan.io/testnet/topic/0.0.11336190) | | first run FAIL, fixed: see below |
+| confirmation run, honest | [`0.0.7162784@1793968064.261824764`](https://hashscan.io/testnet/transaction/0.0.7162784@1793968064.261824764) | `0x31d11a3d…` | PASS, and HCS PASS: 3/3 messages, chain intact, 1 exact resend skipped |
+
+HCS finding: during the stuck case one submit got `DUPLICATE_TRANSACTION` from the SDK's own retry, meaning the first attempt had landed. The outbox resent it, so message seq 111 is on the topic twice (topic #112 and #113, identical hash). Delivery to HCS is at-least-once, so `verifyChain` now skips an exact resend of the message just accepted and reports it; an edit, a gap or a different message at a used seq still breaks the chain. `pnpm audit:verify` → 119 messages, chain intact (1 exact resend skipped).
+
+### Integration with lane C, step 3: the agent runtime relays to lane C's TradeDeals (`CHAIN_ADAPTER=local pnpm agent`)
+Full loop on lane C's local stack (anvil 31337, their contracts and verifier, x402 on). The exporter claims with `npm run claim` → the agent sees `Claimed` → `getDeal` + `verifier()` pre-checks → pays on Hedera → checks the signed answer → **sends `submitVerification` itself** (relayer `0x15d3…6A65`, simulated first) → the contract decides → the agent reads the exporter's real score from TrustRegistry → HCS record linking the Hedera tx, `sigHash` and the chain tx. Re-checked independently: the four payments are `CRYPTOTRANSFER SUCCESS` on the Mirror Node, `cast receipt` = success, `TrustRegistry.trust(exporter)` = 2632 after the cheat, `pnpm audit:verify` → 88 messages, chain intact.
+
+| Case | Hedera tx | Local-chain tx (`submitVerification`) | Contract | HCS |
+|---|---|---|---|---|
+| honest, deal 1 | [`0.0.7162784@1793964875.087663913`](https://hashscan.io/testnet/transaction/0.0.7162784@1793964875.087663913) | `0x7c368a1b…3512134` | `Verified`; score 50.00% (credit at settlement) | #74 |
+| lag, deal 2, check 1 | [`0.0.7162784@1793965090.509325768`](https://hashscan.io/testnet/transaction/0.0.7162784@1793965090.509325768) | `0xb090bf39…cc2d8e2` | `Pending` | #79 |
+| lag, deal 2, check 2 (after an agent restart: caught up from the chain) | [`0.0.7162784@1793965159.477786777`](https://hashscan.io/testnet/transaction/0.0.7162784@1793965159.477786777) | `0xdcbb41ca…26e828df5bc` | `Verified` | #85 |
+| short weight, deal 1 on a fresh chain | [`0.0.7162784@1793965414.319834640`](https://hashscan.io/testnet/transaction/0.0.7162784@1793965414.319834640) | `0xbcc1d24a…1aaf6d` | `Rejected` (weight); TrustRegistry 50.00% → 26.32% | #87 |
+
+Guardrails seen live in this run, nothing paid: the 10.00 daily cap (today's earlier runs had spent it; raised to 20.00 with `POLICY_MAX_PER_DAY` for this session) and the 5-checks-per-exporter cap. The latter showed the cap counted anvil's reused exporter address across deployments; it is now per deployment. The contract's own credit limit (200 USDT open exposure for a new exporter) refused a third 100 USDT deal, which is why the cheat ran on a fresh chain.
+
 ### Integration with lane C, step 2: checks before paying (`getDeal`, `verifier()`), deals scoped per deployment
 Same stack. Before each paid check the agent reads `getDeal` (still Claimed or Pending?) and `verifier()` (is it the key we pay for?). The spending ledger keys a deal by (chain, TradeDeals, deal id), plus the genesis hash on anvil, which redeploys at the same address on every restart. Agent USDC 30.7 → 29.5 over steps 1–2: exactly the four 0.30 payments listed (step 1's two runs, against lane C's verifier and the regression run against ours, plus the two below).
 

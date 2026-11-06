@@ -10,10 +10,10 @@ Small exporters get paid in minutes instead of 60 days. Investors fund the invoi
 | Path | What |
 |---|---|
 | `packages/shared` | Schemas, EIP-712 types, Trust Score + terms reference math, golden test vectors |
-| `services/verifier` | x402-protected `POST /verify` (Hedera testnet, USDC) returning EIP-712-signed observations |
+| `services/verifier` | Demo verifier for chain-less runs (mock mode, overcharge/outage guardrail demos). The real flow uses lane C's verifier (`services/verifier` at the repo root), which reads claims from TradeDeals |
 | `services/agent` | Autonomous verifier agent: spending gate, x402 client, relay to Whitechain, approvals API |
 | `services/audit` | HCS audit log (hash-chained, tamper-evident), created and written through Hedera Agent Kit |
-| `contracts/` | Whitechain contracts (lane C) |
+| `../contracts`, `../services/verifier` | Lane C: TradeDeals + TrustRegistry, and the x402 verifier the agent pays |
 | `apps/web` | Dashboard (lane A) |
 
 ## Setup
@@ -51,6 +51,7 @@ TODO
 Settled payments (HashScan), all on Hedera testnet, more in `docs/PROOFS.md`:
 - G1, first autonomous paid request: [`0.0.7162784@1793943996.436285753`](https://hashscan.io/testnet/transaction/0.0.7162784@1793943996.436285753)
 - Plan v5 e2e (`pnpm e2e`, all 7 cases): Verified [`0.0.7162784@1793957339.087885327`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957339.087885327), Rejected for short weight [`0.0.7162784@1793957378.179920972`](https://hashscan.io/testnet/transaction/0.0.7162784@1793957378.179920972)
+- Full loop on lane C's contracts (`pnpm e2e:local`, all 6 cases): honest → Verified → Settled, TrustRegistry 50.00% → 66.67% [`0.0.7162784@1793967040.098670712`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967040.098670712); stuck shipment → Pending, Pending, Rejected after the deadline [`0.0.7162784@1793967240.728426283`](https://hashscan.io/testnet/transaction/0.0.7162784@1793967240.728426283)
 - Audit trail: HCS topic [`0.0.11336190`](https://hashscan.io/testnet/topic/0.0.11336190), created by Hedera Agent Kit
 
 ## Agent safety (plan v5 §9)

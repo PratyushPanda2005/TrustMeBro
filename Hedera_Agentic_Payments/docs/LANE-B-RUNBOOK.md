@@ -5,7 +5,7 @@ Run these in order on a dev machine (Node ≥ 20, pnpm 10). Each step ends with 
 ## 0. Install + unit tests (no network needed after install)
 ```bash
 pnpm install
-pnpm -r test          # shared 29 · verifier 16 · audit 18 · agent 60
+pnpm -r test          # shared 29 · verifier 16 · audit 19 · agent 68
 pnpm -r typecheck
 pnpm --filter @tmb/shared fixtures   # viem-signed samples for lane C → packages/shared/fixtures/
 ```
@@ -31,7 +31,7 @@ pnpm --filter @tmb/audit create-topic   # prints AUDIT_TOPIC_ID + HashScan link 
 ```
 The topic is created and written through **Hedera Agent Kit** v4 (`create_topic_tool`, `submit_topic_message_tool`, run from code, no LLM), with the submit key set to the operator key. The kit instance has only those two tools, so it can't move money. Set `AUDIT_SINK=sdk` to fall back to plain `@hiero-ledger/sdk`. Each topic keeps its own chain tail in `services/agent/.state/audit-tail-<topic>.json`, so a new topic starts at seq 0.
 
-## 4. Agent in mock mode (before lane C deploys)
+## 4. Agent in mock mode (no chain; our demo verifier)
 ```bash
 CHAIN_ADAPTER=mock pnpm agent   # the demo exporter claims 10,000 kg / LOADED / hash A → agent pays → mock TradeDeals: Verified → HCS
 pnpm audit:verify               # "✅ chain intact"
@@ -46,7 +46,7 @@ curl localhost:4002/approvals      # dashboard shows this
 ```
 Add `"dealId":"0x…"` to apply a scenario to one deal only. `OVERCHARGE_PRICE` changes the 5.00.
 
-## 4b. Hedera e2e (B7, no Whitechain needed)
+## 4b. Hedera e2e with guardrails (no chain; our demo verifier)
 ```bash
 pnpm verifier      # terminal 1
 pnpm e2e           # terminal 2: all 7 cases, or `pnpm e2e short-weight` for one
@@ -75,29 +75,58 @@ npm ci && PAYMENTS=on VERIFIER_PAYTO=0.0.11331478 npm run local     # anvil 3133
 npm run claim -- MSKU1234567 honest                                  # → "Deal 1 claimed"
 cd ../../Hedera_Agentic_Payments
 CHAIN_ADAPTER=local pnpm agent:once 1                                # reads deal 1, pays on Hedera, checks the signed answer
+CHAIN_ADAPTER=local RECHECK_DELAY_SEC=5 pnpm agent                   # the runtime: watches Claimed, pays, sends submitVerification
+npm run claim -- MSKU1000002 lag                                     # (in services/verifier) → Pending, then Verified on the recheck
+npm run claim -- MSKU1000003 short-weight                            # → Rejected, TrustRegistry 50.00% → 26.32%
 ```
+Each relay prints the local-chain tx hash, the contract's events and the exporter's TrustRegistry score before and after. Restart the agent whenever you restart lane C's stack (new genesis, new deal ids). A new exporter's open exposure is capped at 200 USDT by the contract, so a third unsettled 100 USDT deal reverts `CreditLimitExceeded`: restart the stack for more cases.
 Before paying, the agent reads `getDeal` (only Claimed or Pending deals are checked) and `verifier()` (it must be the key the agent pays for, or every answer would revert `InvalidSigner`). Rechecks happen only on Pending, at most 3 paid checks per deal; the last one waits until just after `verifyDeadline`, so a stuck shipment gets a verdict from the contract. The spending ledger keys a deal by (chain, TradeDeals, deal id), plus anvil's genesis hash locally, because anvil redeploys at the same address on every restart.
 
 `CHAIN_ADAPTER=local` takes TradeDeals, chain id, verifier address and the relayer key from `services/verifier/local-deployment.json` (`LOCAL_DEPLOYMENT` overrides the path). Stop our own verifier first: both use port 4021.
 
-## 5. G2: real Whitechain relay (lane C's TradeDeals deployed)
-Lane C deploys with `verifier_ = <address of VERIFIER_EVM_PRIVATE_KEY>`. Then set `TRADE_DEALS_ADDRESS` (verifier and agent both read it: it is the EIP-712 `verifyingContract`), `RELAYER_PRIVATE_KEY` (holds WBT), `WHITECHAIN_FROM_BLOCK`, restart the verifier and run:
+## 4d. Full-loop e2e on lane C's contracts (`pnpm e2e:local`)
 ```bash
-CHAIN_ADAPTER=whitechain pnpm agent
+cd services/verifier && PAYMENTS=on VERIFIER_PAYTO=0.0.11331478 npm run local     # repo root, terminal 1
+pnpm e2e:local            # terminal 2: all 6 cases (~4 min, 2.70 USDC), or `pnpm e2e:local stuck`
 ```
-The exporter calls `declareClaims` → the agent sees `Claimed` → pays on Hedera → `submitVerification` (simulated first) → Verified / Pending / Rejected / Mismatch on the explorer. Rechecks wait `RECHECK_DELAY_SEC` (default 20).
-Scenario switch for the cheat run:
+Each case KYCs a fresh exporter (TrustRegistry onboards it at 50%), creates, approves and claims a 100 USDT deal (10,000 kg / LOADED, `verifyWindow` 60 s, the contract's minimum), then runs the agent's own code per check: pre-checks → x402 payment on Hedera → signed answer → `submitVerification` from the agent's relayer → the contract decides → recheck on Pending, the last one after `verifyDeadline`. It prints each Hedera tx, local-chain tx and contract event, then checks the agent's USDC on the Mirror Node, `getDeal` state and `falsifiedMask`, `TrustRegistry.trust(exporter)` and the HCS topic.
+
+| Case | lane C scenario | Contract | Paid | TrustRegistry |
+|---|---|---|---|---|
+| `honest` | 9,850 kg, DEPARTED, same docs | Verified → funded, repaid → Settled | 0.30 | 50.00% → 66.67% at settlement |
+| `lag` | GATED_IN, then DEPARTED | Pending → Verified | 0.60 | 50.00% |
+| `short-weight` | 8,020 kg | Rejected (weight) | 0.30 | 26.32% |
+| `fake-docs` | other eBL hash | Rejected (documents) | 0.30 | 27.03% |
+| `over-weight` | 11,111 kg | Mismatch | 0.30 | 50.00% |
+| `stuck` | GATED_IN forever | Pending, Pending, Rejected (status) after the deadline | 0.90 | 28.57% |
+
+The overcharge and outage guardrails need a verifier whose price and availability can be switched. Lane C's can't do that, so they stay in `pnpm e2e` (4b) against our demo verifier. Today's runs count against `POLICY_MAX_PER_DAY` (10.00); raise it for a long test session, not in production.
+
+## 5. G2: Whitechain testnet (after lane C deploys)
+The flow is the one `pnpm e2e:local` proves, on chain 1874. Lane C deploys TradeDeals with their verifier's address as `verifier_` and runs their verifier against it (`TRADEDEALS_ADDRESS`, `VERIFIER_SIGNER_PK`, `PAYMENTS=on`, `VERIFIER_PAYTO=0.0.11331478`). Then in `.env` here:
 ```bash
-curl -X POST localhost:4021/admin/scenario -H 'x-admin-token: <VERIFIER_ADMIN_TOKEN>' -H 'content-type: application/json' \
-  -d '{"scenario":"short-weight","dealId":"0x<uint256 deal id as 32-byte hex>"}'
+CHAIN_ADAPTER=whitechain
+TRADE_DEALS_ADDRESS=0x…        # lane C's deployment
+VERIFIER_ADDRESS=0x…           # verifier_ from that deployment; the agent pays only if verifier() equals it
+RELAYER_PRIVATE_KEY=0x…        # holds WBT for gas
+WHITECHAIN_FROM_BLOCK=…        # TradeDeals deployment block
+VERIFIER_URL=https://…         # lane C's verifier
 ```
-Scenarios: `honest`, `lag`, `short-weight`, `fake-docs`, `overcharge`, `outage`. Under-declared is the exporter's side: declare less than 9,850 kg / 1.03.
+```bash
+pnpm agent:once <dealId>       # one paid check of a real Claimed deal (pre-checks first)
+pnpm agent                     # the runtime: WS for Claimed, pays, relays; explorer links per relay
+```
+Scenarios are set on lane C's verifier per container: `PUT /demo/scenarios/<containerNo>` with `x-demo-token` and `{"scenario":"short-weight"}`.
 
 ## Interfaces with lane C (plan v5 is binding; lane C's contracts are the reference)
 - `packages/shared/src/abi.ts`: subset extracted from lane C's generated ABI (`Claimed`, `submitVerification(Verification, bytes) → Outcome`, `getDeal`, `verifier`, events, all custom errors). Re-extract when the contract changes.
 - `packages/shared/src/eip712.ts`: `Verification(bytes32 dealId,uint32 observedKg,uint8 statusCode,bytes32 docHash,uint64 observedAt,uint256 nonce,uint256 expiry)`, domain `{TrustMeBro, 1, 1874, TradeDeals}`. `test/sign.test.ts` reproduces lane C's own signed fixture byte for byte.
 - `packages/shared/src/trust.ts`: TS mirror of `TrustRegistry`, `_judge`, `_scoreSettlement`, `DealMath`; `vectors/trust.json` has the plan v5 §4–6 values.
 - `packages/shared/src/demo.ts`: the demo container's doc hash A / forged hash B, shared by the exporter side and the verifier.
+
+Found while integrating, for lane C (their code, not changed here):
+- If the verifier's first call to the facilitator fails at startup ("Failed to fetch supported kinds"), every `POST /verify` returns 500 until restart. Nobody is charged, but it needs a retry or a lazy init.
+- `npm run claim` crashes on Windows with a libuv assertion (`UV_HANDLE_CLOSING`) when it calls `process.exit()` with sockets still closing; setting `process.exitCode` and returning avoids it (fixed the same way in our `agent:once`).
 
 ## What's verified where
 | Check | Here (unit) | Live |
