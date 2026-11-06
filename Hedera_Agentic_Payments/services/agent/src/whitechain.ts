@@ -10,7 +10,7 @@ import {
   dealIdToBytes32, bytes32ToDealId, type VerifyResponse,
 } from "@tmb/shared";
 import { fromJson } from "@tmb/shared/sign";
-import type { ChainAdapter, ClaimedEvent, RelayOutcome, RelayResult } from "./chain.ts";
+import type { ChainAdapter, ClaimedEvent, DealStatus, RelayOutcome, RelayResult } from "./chain.ts";
 
 export const whitechainSepolia = defineChain({
   id: WHITECHAIN_CHAIN_ID,
@@ -79,6 +79,17 @@ export class WhitechainAdapter implements ChainAdapter {
       }
     }
     return out;
+  }
+
+  async dealStatus(dealId: string): Promise<DealStatus | undefined> {
+    const deal: any = await withBackoff(() => this.pub.readContract({ address: this.tradeDeals, abi: tradeDealsAgentAbi, functionName: "getDeal", args: [bytes32ToDealId(dealId as Hex)] }));
+    const state = Number(deal.state);
+    if (state === DEAL_STATE.None) return undefined;
+    return { state, checks: Number(deal.checks), verifyDeadline: BigInt(deal.verifyDeadline) };
+  }
+
+  async verifier(): Promise<string> {
+    return withBackoff(() => this.pub.readContract({ address: this.tradeDeals, abi: tradeDealsAgentAbi, functionName: "verifier" })) as Promise<string>;
   }
 
   async submitVerification(r: VerifyResponse): Promise<RelayResult> {

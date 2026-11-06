@@ -14,7 +14,7 @@
 import { join } from "node:path";
 import { HEDERA_MIRROR, hashscanTopic, hashscanTx, type HcsMessage } from "@tmb/shared";
 import { AuditLog, auditTailFile, decodeMirrorMessages, makeAuditSink, verifyChain } from "@tmb/audit";
-import { processClaim, shouldRecheck } from "./agent.ts";
+import { nextCheckInSec, processClaim } from "./agent.ts";
 import { buyVerification, type AuditEvent } from "./buy.ts";
 import { MockChainAdapter, type RelayOutcome } from "./chain.ts";
 import { need, tradeDealsOrPlaceholder } from "./config.ts";
@@ -102,7 +102,7 @@ for (const name of names) {
   const run: E2ERun = { outcomes: [], charged: 0n, scoreBps: 0 };
   const txs: string[] = [];
   for (let checkNo = 1; checkNo <= maxChecks; checkNo++) {
-    const out = await processClaim(claim, checkNo, { chain, audit: auditWrite, buy: (req, ctx) => buyVerification(req, ctx, buyDeps) });
+    const out = await processClaim(claim, checkNo, { chain, audit: auditWrite, expectedSigner: buyDeps.expectedSigner, buy: (req, ctx) => buyVerification(req, ctx, buyDeps) });
     if (out.outcome === "relay_failed" || !["verified", "pending", "rejected", "mismatch"].includes(out.outcome)) {
       run.stopped = out.outcome;
       // A held payment must not stay in the dashboard queue after the run.
@@ -112,9 +112,10 @@ for (const name of names) {
     }
     run.outcomes.push(out.outcome as RelayOutcome);
     if ("hederaTxId" in out && out.hederaTxId) txs.push(out.hederaTxId);
-    if (!shouldRecheck(out.outcome, checkNo, maxChecks)) break;
-    await auditWrite({ kind: "recheck", dealId: claim.dealId, reason: `tracking lag: check ${checkNo + 1} of ${maxChecks}` });
-    await sleep(RECHECK_WAIT_MS);
+    const wait = nextCheckInSec(out.outcome, checkNo, maxChecks, Math.floor(Date.now() / 1000), claim.verifyDeadline, RECHECK_WAIT_MS / 1000);
+    if (wait === null) break;
+    await auditWrite({ kind: "recheck", dealId: claim.dealId, reason: `status behind: check ${checkNo + 1} of ${maxChecks} in ${Math.ceil(wait)}s` });
+    await sleep(wait * 1000);
   }
   run.charged = await chargedSince(before, c.charge);
   run.scoreBps = chain.exporterScoreBps(claim.exporter);

@@ -3,7 +3,8 @@
  *   1. catch up on deals still Claimed/Pending, then watch `Claimed` on Whitechain
  *   2. per claim: spending gate → x402 payment on Hedera → signed facts → relay to TradeDeals
  *   3. the contract decides: Verified / Rejected / Mismatch, or Pending → the agent rechecks
- *      later as the next check (max 3 per deal)
+ *      later as the next check (max 3 per deal; the last one after verifyDeadline). Before each paid
+ *      check it reads getDeal (still Claimed/Pending?) and verifier() (the key it pays for?).
  *   4. every step goes to the HCS audit topic (Agent Kit), incl. {hederaTxId, payer, sigHash, whitechainTx}
  *   5. over-cap prices wait for a human via the approvals API (dashboard button)
  * Run: pnpm agent   (CHAIN_ADAPTER=mock until lane C deploys; then whitechain)
@@ -12,7 +13,7 @@ import { join } from "node:path";
 import { hashscanTopic, type Hex } from "@tmb/shared";
 import { AuditLog, auditTailFile, makeAuditSink } from "@tmb/audit";
 import { buyVerification } from "./buy.ts";
-import { processClaim, shouldRecheck } from "./agent.ts";
+import { nextCheckInSec, processClaim } from "./agent.ts";
 import { MockChainAdapter, type ChainAdapter, type ClaimedEvent } from "./chain.ts";
 import { WhitechainAdapter } from "./whitechain.ts";
 import { startApi } from "./api.ts";
@@ -37,8 +38,8 @@ const chain: ChainAdapter = process.env.CHAIN_ADAPTER === "whitechain"
 // Signs only the exact quote the spending gate approved (including human-approved over-cap prices).
 const buyDeps = liveBuyDeps(auditWrite);
 const maxChecks = buyDeps.policy.maxChecksPerDeal;
-const recheckDelayMs = Number(process.env.RECHECK_DELAY_SEC ?? 20) * 1000;
-const deps = { chain, audit: auditWrite, buy: (req: any, ctx: any) => buyVerification(req, ctx, buyDeps) };
+const recheckDelaySec = Number(process.env.RECHECK_DELAY_SEC ?? 20);
+const deps = { chain, audit: auditWrite, expectedSigner: buyDeps.expectedSigner, buy: (req: any, ctx: any) => buyVerification(req, ctx, buyDeps) };
 
 // One check at a time per deal (no double processing from catch-up + live events + rechecks).
 const inflight = new Set<string>();
@@ -51,9 +52,11 @@ async function handle(e: ClaimedEvent, checkNo: number) {
   try {
     const r = await processClaim(e, checkNo, deps);
     console.log(`[agent] deal ${e.dealId.slice(0, 10)}… check ${checkNo} → ${r.outcome}`);
-    if (shouldRecheck(r.outcome, checkNo, maxChecks)) {
-      await auditWrite({ kind: "recheck", dealId: e.dealId, reason: `tracking lag: check ${checkNo + 1} of ${maxChecks} in ${recheckDelayMs / 1000}s` });
-      setTimeout(() => void handle(e, checkNo + 1), recheckDelayMs);
+    const wait = nextCheckInSec(r.outcome, checkNo, maxChecks, Math.floor(Date.now() / 1000), e.verifyDeadline, recheckDelaySec);
+    if (wait !== null) {
+      const last = checkNo + 1 === maxChecks && wait > recheckDelaySec ? " (last check, kept for after verifyDeadline)" : "";
+      await auditWrite({ kind: "recheck", dealId: e.dealId, reason: `status behind: check ${checkNo + 1} of ${maxChecks} in ${wait}s${last}` });
+      setTimeout(() => void handle(e, checkNo + 1), wait * 1000);
     }
   } catch (err) {
     await auditWrite({ kind: "error", dealId: e.dealId, reason: `unexpected: ${(err as Error).message}` });

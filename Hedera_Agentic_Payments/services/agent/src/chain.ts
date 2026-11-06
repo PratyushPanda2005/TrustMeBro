@@ -1,5 +1,5 @@
 /** Whitechain access behind an interface, so the agent runs on a mock until lane C deploys. Plan v5 §3, §7. */
-import { applyFalsified, applySettledExporter, judge, newExporterRep, trust, type Rep, type VerifyResponse } from "@tmb/shared";
+import { DEAL_STATE, applyFalsified, applySettledExporter, judge, newExporterRep, trust, type Rep, type VerifyResponse } from "@tmb/shared";
 
 /** TradeDeals `Claimed` event: the exporter's value claims (plan v5 §3 step 4). */
 export interface ClaimedEvent {
@@ -24,6 +24,16 @@ export interface TrustUpdate {
   falsifiedMask: number;
 }
 
+/** What the agent reads from TradeDeals before paying for a check (getDeal). */
+export interface DealStatus {
+  state: number; // DEAL_STATE
+  checks: number; // verifications the contract has accepted so far
+  verifyDeadline: bigint; // unix seconds; status still behind after it is falsified
+}
+
+/** DEAL_STATE number → name, for logs. */
+export const stateName = (s: number) => Object.entries(DEAL_STATE).find(([, v]) => v === s)?.[0] ?? `state ${s}`;
+
 export type RelayResult = { ok: true; txHash: string; outcome: RelayOutcome; trust?: TrustUpdate } | { ok: false; error: string };
 
 export interface ChainAdapter {
@@ -32,11 +42,15 @@ export interface ChainAdapter {
   watchClaims(cb: (e: ClaimedEvent) => void): () => void;
   /** Deals still in Claimed or Pending, with how many checks were already submitted (catch-up and rechecks). */
   openClaims(): Promise<{ claim: ClaimedEvent; checks: number }[]>;
+  /** The deal as TradeDeals sees it now; undefined if it does not exist. */
+  dealStatus(dealId: string): Promise<DealStatus | undefined>;
+  /** TradeDeals.verifier(): the only EIP-712 signer the contract accepts. undefined = this chain can't say (mock). */
+  verifier(): Promise<string | undefined>;
   /** Simulates first; only sends if the simulation passes. */
   submitVerification(r: VerifyResponse): Promise<RelayResult>;
 }
 
-type MockState = "Claimed" | "Pending" | "Verified" | "Rejected" | "Mismatch" | "Settled";
+type MockState = "Claimed" | "Pending" | "Verified" | "Rejected" | "Mismatch" | "Settled" | "Expired";
 const MAX_CLOCK_SKEW = 300; // TradeDeals.MAX_CLOCK_SKEW: verifier clock may run ahead of the chain
 
 /**
@@ -52,7 +66,12 @@ export class MockChainAdapter implements ChainAdapter {
   private reps = new Map<string, Rep>();
   private nonces = new Set<string>();
   private failure?: string;
-  constructor(readonly tradeDeals: string, private now: () => number = () => Math.floor(Date.now() / 1000)) {}
+  constructor(
+    readonly tradeDeals: string,
+    private now: () => number = () => Math.floor(Date.now() / 1000),
+    /** What verifier() returns; the mock doesn't check signatures (the agent does). */
+    private verifierAddress?: string,
+  ) {}
 
   /** The exporter calls declareClaims: state → Claimed, claimTime = now. */
   emit(e: ClaimedEvent) {
@@ -68,6 +87,19 @@ export class MockChainAdapter implements ChainAdapter {
   }
   async openClaims() {
     return [...this.deals.values()].filter((d) => d.state === "Claimed" || d.state === "Pending").map((d) => ({ claim: d.claim, checks: d.checks }));
+  }
+
+  async dealStatus(dealId: string): Promise<DealStatus | undefined> {
+    const d = this.deals.get(dealId.toLowerCase());
+    return d && { state: DEAL_STATE[d.state], checks: d.checks, verifyDeadline: d.claim.verifyDeadline };
+  }
+  async verifier() {
+    return this.verifierAddress;
+  }
+  /** Demo/test: the exporter or anyone moves the deal on (e.g. expire, cancel) behind the agent's back. */
+  setState(dealId: string, state: MockState) {
+    const d = this.deals.get(dealId.toLowerCase());
+    if (d) d.state = state;
   }
 
   async submitVerification(r: VerifyResponse): Promise<RelayResult> {
