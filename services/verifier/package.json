@@ -1,0 +1,32 @@
+{
+  "name": "@trustmebro/verifier",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TrustMeBro x402 verification API: paid POST /verify on Hedera, EIP-712 signed shipment observations for Whitechain",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "local": "tsx scripts/local.ts",
+    "claim": "tsx scripts/claim.ts",
+    "e2e": "tsx scripts/e2e.ts",
+    "test": "node --import tsx --test test/scenarios.test.ts test/server.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@trustmebro/shared": "file:../../packages/shared",
+    "@x402/core": "2.30.0",
+    "@x402/express": "2.30.0",
+    "@x402/extensions": "2.30.0",
+    "@x402/hedera": "2.30.0",
+    "express": "^5.3.0",
+    "viem": "^2.57.0",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20",
+    "tsx": "^4.19.0",
+    "typescript": "^5"
+  }
+}

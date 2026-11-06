@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     ".claude/**",
     // Foundry project (Solidity, build output, npm-vendored libraries).
     "contracts/**",
+    // Backend services have their own tsconfig and tests.
+    "services/**",
   ]),
 ])
 
