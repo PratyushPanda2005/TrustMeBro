@@ -45,7 +45,7 @@ const exampleResponse = {
   expected: { outcome: "Verified", falsifiedMask: 0 },
 }
 
-export function createPaymentMiddleware(cfg: Config, log: Logger): RequestHandler {
+export function createPaymentMiddleware(cfg: Config, log: Logger, protocol: 'v1' | 'v2' = 'v1'): RequestHandler {
   if (!cfg.VERIFIER_PAYTO) throw new Error("VERIFIER_PAYTO is required when PAYMENTS=on")
 
   const facilitator = new HTTPFacilitatorClient({ url: cfg.FACILITATOR_URL, timeoutMs: 60_000 })
@@ -72,13 +72,13 @@ export function createPaymentMiddleware(cfg: Config, log: Logger): RequestHandle
           payTo: cfg.VERIFIER_PAYTO,
           maxTimeoutSeconds: 120,
         },
-        description:
+        description: protocol === 'v2' ? 'Shipment evidence for Whitechain V2. Mode and provenance are explicit; insufficient evidence is not approval.' :
           "Observed shipment facts (terminal weighbridge weight, carrier status, eBL document hash) for a " +
           "TrustMeBro deal, EIP-712 signed for TradeDeals on Whitechain (chain 1874). Not charged on 4xx.",
         mimeType: "application/json",
         serviceName: "TrustMeBro Verifier",
         tags: ["trade-finance", "shipment", "verification", "eip712"],
-        extensions: {
+        extensions: protocol === 'v2' ? {} : {
           ...declareDiscoveryExtension({
             bodyType: "json",
             input: exampleRequest,

@@ -1,32 +1,40 @@
 {
-  "name": "@trustmebro/verifier",
-  "version": "0.1.0",
-  "private": true,
-  "description": "TrustMeBro x402 verification API: paid POST /verify on Hedera, EIP-712 signed shipment observations for Whitechain",
-  "type": "module",
-  "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "tsx watch src/index.ts",
-    "local": "tsx scripts/local.ts",
-    "claim": "tsx scripts/claim.ts",
-    "e2e": "tsx scripts/e2e.ts",
-    "test": "node --import tsx --test test/scenarios.test.ts test/server.test.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@trustmebro/shared": "file:../../packages/shared",
-    "@x402/core": "2.30.0",
-    "@x402/express": "2.30.0",
-    "@x402/extensions": "2.30.0",
-    "@x402/hedera": "2.30.0",
-    "express": "^5.3.0",
-    "viem": "^2.57.0",
-    "zod": "^4.6.6"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/node": "^20",
-    "tsx": "^4.19.0",
-    "typescript": "^5"
-  }
+    "name":  "@trustmebro/verifier",
+    "version":  "0.1.0",
+    "private":  true,
+    "description":  "TrustMeBro x402 verification API: paid POST /verify on Hedera, EIP-712 signed shipment observations for Whitechain",
+    "type":  "module",
+    "scripts":  {
+                    "start":  "tsx src/v2-main.ts",
+                    "dev":  "tsx watch src/v2-main.ts",
+                    "local":  "tsx scripts/local.ts",
+                    "claim":  "tsx scripts/claim.ts",
+                    "e2e":  "tsx scripts/e2e.ts",
+                    "test":  "node --import tsx --test test/scenarios.test.ts test/server.test.ts",
+                    "typecheck":  "tsc --noEmit",
+                    "start:v2":  "tsx src/v2-main.ts",
+                    "test:v2":  "tsx --test test/v2.test.ts test/v2-startup.test.ts test/v2-setup-config.test.ts test/metamask.test.ts",
+                    "start:legacy":  "tsx src/index.ts",
+                    "check:v2":  "tsx scripts/check-v2.ts",
+                    "dev:legacy":  "tsx watch src/index.ts",
+                    "diagnose:v2":  "tsx src/v2-main.ts --diagnose",
+                    "setup:v2-demo":  "tsx scripts/setup-v2-demo.ts",
+                    "prepare:metamask":  "tsx scripts/prepare-metamask.ts"
+                },
+    "dependencies":  {
+                         "@trustmebro/shared":  "file:../../packages/shared",
+                         "@x402/core":  "2.30.0",
+                         "@x402/express":  "2.30.0",
+                         "@x402/extensions":  "2.30.0",
+                         "@x402/hedera":  "2.30.0",
+                         "express":  "^5.3.0",
+                         "viem":  "^2.57.0",
+                         "zod":  "^4.6.6"
+                     },
+    "devDependencies":  {
+                            "@types/express":  "^5.0.0",
+                            "@types/node":  "^20",
+                            "tsx":  "^4.19.0",
+                            "typescript":  "^5"
+                        }
 }

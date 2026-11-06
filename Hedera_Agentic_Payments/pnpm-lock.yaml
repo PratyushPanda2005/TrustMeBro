@@ -48,6 +48,9 @@ importers:
       '@tmb/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@trustmebro/shared':
+        specifier: link:../../../packages/shared
+        version: link:../../../packages/shared
       '@x402/core':
         specifier: 2.30.0
         version: 2.30.0

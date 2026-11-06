@@ -7,7 +7,7 @@ const privateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "must be a 0x-prefixe
 const hederaAccount = z.string().regex(/^0\.0\.\d+$/, "must look like 0.0.12345")
 const emptyToUndefined = (v: unknown) => (v === "" ? undefined : v)
 
-const schema = z
+export const configSchema = z
   .object({
     PORT: z.coerce.number().int().positive().default(4021),
     RPC_URL: z.string().url().default("https://rpc.testnet.whitechain.io"),
@@ -29,10 +29,10 @@ const schema = z
     path: ["VERIFIER_PAYTO"],
   })
 
-export type Config = z.infer<typeof schema>
+export type Config = z.infer<typeof configSchema>
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = schema.safeParse(env)
+  const parsed = configSchema.safeParse(env)
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`)
     throw new Error(`Invalid verifier config:\n${lines.join("\n")}`)
