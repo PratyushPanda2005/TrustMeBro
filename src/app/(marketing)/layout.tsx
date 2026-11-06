@@ -1,25 +1,16 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
 
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { fontMono, fontSans } from "@/lib/fonts"
 
-import "./globals.css"
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-})
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-})
+import "../globals.css"
 
 export const metadata: Metadata = {
-  title: "trustmebro",
-  description: "trustmebro",
+  title: "TrustMeBro: the trade finance you can verify",
+  description:
+    "Exporters are paid in minutes, not 60 days. Investors fund invoices in USDT, and the money is released only when a paid, signed check proves the shipment claims are true.",
 }
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -27,13 +18,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      data-scroll-behavior="smooth"
+      className={`${fontSans.variable} ${fontMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
-          enableSystem
+          forcedTheme="light"
+          enableSystem={false}
           disableTransitionOnChange
         >
           <TooltipProvider>{children}</TooltipProvider>
