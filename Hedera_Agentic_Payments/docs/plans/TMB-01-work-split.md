@@ -1,6 +1,6 @@
 # TMB-01 · Work split into 3 lanes (no-blocker plan)
 
-Companion to `TMB-00-master-plan.md` (v4). Time: **Fri Nov 6, 04:00 IST → Sat Nov 7, 07:30 submit** (hard deadline 09:00).
+Companion to `TMB-00-master-plan.md` (**plan v5, binding**; "v1–v4" below are contract deploy versions, not plan versions). Time: **Fri Nov 6, 04:00 IST → Sat Nov 7, 07:30 submit** (hard deadline 09:00).
 
 | Lane | Name | Owns | Person |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Companion to `TMB-00-master-plan.md` (v4). Time: **Fri Nov 6, 04:00 IST → Sat 
 |---|---|---|---|
 | **G0** Interfaces frozen | Fri 05:30 | Table in §1 committed | — |
 | **G1** Skeleton live | Fri 09:00 | C: v1 deployed + **verified** (create / approve / buy); B: x402 `POST /verify` paid on Hedera, tx on HashScan; A: dashboard running in mock mode, all three roles | **Hedera core ✔, Whitechain core ✔** |
-| **G2** Evidence loop | Fri 15:00 | Agent sees `ShipmentDeclared` → pays → relays → contract Released / Disputed on testnet; score updates match vectors | the heart of the product |
+| **G2** Evidence loop | Fri 15:00 | Agent sees `Claimed` → pays → relays → contract Verified / Pending / Rejected / Mismatch on testnet; score updates match vectors (plan §4, §5) | the heart of the product |
 | **G3** Money loop | Fri 19:00 | v4 FINAL deployed; settle / redeem / default work; HCS audit live; dashboard in real mode end to end | full lifecycle |
 | **G4** Feature freeze | Fri 23:00 | Seeded Trust history; all e2e scripts green on v4; PROOFS.md complete | demo-ready |
 | **G5** Code freeze | Sat 03:30 | Rehearsal done | — |
@@ -64,8 +64,8 @@ Stack: Next.js, wagmi + viem + RainbowKit, API route handlers (the "backend"), T
 | **A2** | 06:00–09:00 | **Exporter:** create-invoice form. **Importer:** approve. **Investor:** deal list with **both Trust Score cards + resulting advance/yield** (using the shared terms math) + buy flow (approve USDT → buy) | A1 | Playwright mock-mode click-through per role | G1 demo in mock |
 | **A3** | 09:00–12:00 | **Real mode v1** with C's v1 addresses: read deals, send `createInvoice` / `approve` / `buy`, tx states (pending / confirmed / reverted reason), error states: wrong network, not allowlisted, low USDT / allowance. Explorer links on every tx | C v1 (G1), ABI | e2e with wagmi mock connector (test key, `E2E` flag only) | invoice → approve → buy on the live testnet from the UI |
 | **A4** | 12:00–15:00 | **API routes:** `/api/agent-log` (Mirror Node HCS read → decoded `HcsMessage`), `/api/approvals` (proxy to agent), `/api/scenario` (proxy to verifier). **Agent log page** + human-approve button + HashScan links | B6 endpoints (mock until ready), B4 topic id | route tests with recorded fixtures | log renders live HCS messages |
-| **A5** | 15:00–19:00 | **Exporter claims form** (3 booleans) → `declareShipment`; result view (Released / Disputed / Cancelled) with **score delta animation**; settle / redeem / refund screens; deal timeline | C v3 (declare/verify), G2 | Playwright full flow in mock; manual on testnet | full lifecycle clickable |
-| **A6** | 19:00–23:00 | Real mode on **v4**; demo control panel (verifier scenario switch: honest / fake-weight / fake-docs / fake-status / overcharge / outage); loading / empty / error states; responsive; accessibility basics | v4 (G3) | Playwright smoke on testnet | G4 |
+| **A5** | 15:00–19:00 | **Exporter claims form** (declared kg, status, document hash) → `declareClaims`; **evidence view** (observed weight / status / docs + HashScan link); result view (Verified / Pending / Rejected / Mismatch) with **score delta animation**; fund / pay screens; deal timeline | C v3 (declare/verify), G2 | Playwright full flow in mock; manual on testnet | full lifecycle clickable |
+| **A6** | 19:00–23:00 | Real mode on **v4**; demo control panel (verifier scenario switch: honest / lag / short-weight / fake-docs / under-declared / overcharge / outage); loading / empty / error states; responsive; accessibility basics | v4 (G3) | Playwright smoke on testnet | G4 |
 | **A7** | Sat 00:00–03:30 | Rehearsal driver; preload explorer / HashScan tabs; screen layout; script timing | G4 | — | clean 3:45 run |
 | **A8** | Sat 03:30–07:30 | Record video (720p+, real voice, no speed-up); assemble README from B and C sections; screenshots; submit | all | checklist in TMB-00 §11 | submitted |
 
@@ -77,15 +77,15 @@ Stack: Next.js, wagmi + viem + RainbowKit, API route handlers (the "backend"), T
 
 | ID | Window | Task | Depends on | Tests | Done when |
 |---|---|---|---|---|---|
-| **B1** | Fri 04:00–05:30 | **`packages/shared`**: Zod schemas, EIP-712 types, **trust-score + terms TS reference** (§4 of TMB-00), golden vectors JSON, `pnpm fixtures:sign` → signed sample responses (valid / forged / expired / reused nonce / wrong chain). **Handoff to C at 05:30** | — | vector self-tests | C can run signature tests with no live service |
-| **B2** | 05:30–08:00 | Hedera setup (ECDSA accounts, associate USDC `0.0.429274`, Circle faucet), `services/verifier`: Express + `POST /verify` via `@x402/express`, Blocky402, Bazaar schema; scenarios (honest / fake-weight / fake-docs / fake-status / overcharge 5.00 / outage); EIP-712 signing; `/admin/scenario` | I0 Hedera accounts | unit: scenarios + signature round-trip | verifier answers an unpaid POST with 402 |
+| **B1** | Fri 04:00–05:30 | **`packages/shared`**: Zod schemas, EIP-712 types (v5 `Verification` with observed values), **score / advance / risk / fee / waterfall TS reference** (§5–6 of TMB-00, mirroring lane C's `TrustRegistry` + `DealMath`), golden vectors JSON, `pnpm fixtures` → signed sample responses (valid / forged / expired / reused nonce / wrong chain). **Handoff to C at 05:30** | — | vector self-tests | C can run signature tests with no live service |
+| **B2** | 05:30–08:00 | Hedera setup (ECDSA accounts, associate USDC `0.0.429274`, Circle faucet), `services/verifier`: Express + `POST /verify` via `@x402/express`, Blocky402, Bazaar schema; simulated data source (terminal weighbridge kg, carrier status, eBL doc hash) with scenarios (honest / lag / short-weight / fake-docs / under-declared / overcharge 5.00 / outage); request `{dealId, shipmentRef}` (never claims); EIP-712 signing with `observedAt`; `/admin/scenario` | I0 Hedera accounts | unit: scenarios + signature round-trip | verifier answers an unpaid POST with 402 |
 | **B3** | 07:00–09:00 | Minimal paying client (`wrapFetchWithPayment`, `setSpendControls`) → decode `PAYMENT-RESPONSE` → HashScan link | B2 | live: `pnpm agent:once` | **HashScan tx ID in README → G1 / Hedera core** |
 | **B4** | 09:00–11:00 | **Spending gate** (pure function: `payTo` allowlist, ≤ 1.00 / call, ≤ 2.00 / deal, ≤ 10.00 / day, idempotency, `PENDING_HUMAN`) + persistent store | B3 | gate unit tests (every rule, human queue, never-pays-twice) | green |
 | **B5** | 11:00–13:00 | **HCS audit** (Agent Kit `HcsAuditTrailHook` + consensus tools, **90-minute time-box**, fallback `@hiero-ledger/sdk`): topic with submit key, hash-chained messages; `pnpm audit:verify` re-checks the chain | B4 | audit-chain tests | topic visible on HashScan |
-| **B6** | 13:00–15:00 | **Watcher + relay:** `ChainAdapter` (mock + real viem), WS subscription to `ShipmentDeclared`, discovery from the unpaid 402, gate → pay → Zod-check → `recoverTypedDataAddress` pre-check → `simulateContract` → `submitVerification`; 429 backoff; **approvals HTTP API** | C v2 (verify fn), B4, B5 | against mock adapter, then live | **G2:** one full happy run on testnet |
-| **B7** | 15:00–17:30 | Negative runs: `e2e:cheat` (only exporter drops), `e2e:overcharge` (refused + logged), `e2e:outage` (**no penalty**, refund), `e2e:both-honest` (both rise); parity test: TS reference vs onchain score on the vectors | C v3 | e2e on testnet | script prints PASS + proof links into `docs/PROOFS.md` |
+| **B6** | 13:00–15:00 | **Watcher + relay:** `ChainAdapter` (mock + real viem), WS subscription to `Claimed`, discovery from the unpaid 402, gate (≤ 1.00/call, ≤ 3 checks / 1.00 per deal, ≤ 10.00/day, ≤ 5 checks per exporter/day) → pay → Zod-check → `recoverTypedDataAddress` pre-check → `simulateContract` → `submitVerification`; **recheck on Pending** (max 3); HCS record `{dealId, hederaTxId, payer, sigHash, whitechainTx}`; 429 backoff; **approvals HTTP API** | C v2 (verify fn), B4, B5 | against mock adapter, then live | **G2:** one full happy run on testnet |
+| **B7** | 15:00–17:30 | e2e runs per plan §4: `honest` (Verified, no score change yet), `lag` (Pending → recheck → Verified), `short-weight` (Rejected, only exporter drops 50 → 26.32%), `fake-docs` (Rejected, 27.03%), `under-declared` (Mismatch, no penalty), `overcharge` (refused + logged), `outage` (**no penalty**); parity test: TS reference vs onchain score on the vectors | C v3 | e2e on testnet | script prints PASS + proof links into `docs/PROOFS.md` |
 | **B8** | 19:00–21:00 | Re-run all e2e on **v4**; collect final proof links | C v4 (G3) | e2e | PROOFS.md final |
-| **B9** | 21:00–23:00 | **Seed script:** onboard importer (fixed Trust Code 80%), 3 quick honest deals so the exporter reaches 80% "High"; leave one fresh wallet pair "Low" for contrast | v4 + C scripts | seed dry-run | G4 |
+| **B9** | 21:00–23:00 | **Seed script:** onboard importer (starting trust 66.67% = 4% risk), 3 quick honest **settled** deals so the exporter reaches 80% and the importer 2.80% risk; leave one fresh wallet pair "Low" for contrast | v4 + C scripts | seed dry-run | G4 |
 | **B10** | Sat 00:00–03:30 | Hardening (retry / backoff, logs), rehearsal support; write README sections: payment flow, agent safety, Hedera tx IDs | — | full suite | — |
 
 **Never blocked by C:** B1–B5 need only Hedera. B6 runs on the mock adapter until v2 lands.
@@ -99,7 +99,7 @@ Stack: Next.js, wagmi + viem + RainbowKit, API route handlers (the "backend"), T
 | **C1** | Fri 04:00–04:45 | Foundry scaffold per Whitechain's guide (`solc 0.8.30`, `evm_version prague`, OZ 5.6.x), `ITradeDeals` + `ITrustRegistry` interfaces → **ABI to `packages/shared/abi/` by 04:45**. In parallel: WBT from the faucet, **sponsor USDT from the booth** (`cast call … decimals()`), install `whitechain-dev` skill | — | `forge build` | ABI committed → **unblocks A and B6** |
 | **C2** | 04:45–07:00 | `TrustRegistry` (r / s counters, priors, `score()`, `terms()`, importer fixed Trust Code onboarding) | B1 vectors (05:30; write from the spec before that) | golden-vector tests, exact | all vectors pass |
 | **C3** | 07:00–09:00 | `TradeDeals` part 1: `createInvoice` (hash uniqueness, terms snapshot), `approve`, ERC-1155 allowlist restrictions in `_update`, `buy()` in USDT (`SafeERC20`), funds locked. **Deploy v1 + verify** on the explorer; `deployments/1874.json` | C2 | double invoice, non-allowlisted buy / transfer, terms by tier, lock | **G1:** verified badge + a real `buy()` tx |
-| **C4** | 09:00–12:00 | `declareShipment(claims)` (own `false` claim → cancel, no penalty), `submitVerification(v, sig)` (central EIP-712 verifier: signer, nonce, expiry, chain), compare claims vs response → **Released / Disputed**, call registry updates, `expire()`. **Deploy v2** | B1 fixtures | forged / reused / expired / wrong-chain rejected; only-the-falsifier-drops; all-honest-both-rise; both-falsify-both-drop | v2 deployed, ABI refreshed |
+| **C4** | 09:00–12:00 | `declareClaims(kg, status, docHash, shipmentRef)`, `submitVerification(v, sig)` (central EIP-712 verifier: signer, nonce, expiry, chain, `observedAt > claimTime`), `_judge` → **Verified / Pending / Rejected / Mismatch** (plan §4, §5.6), registry updates (falsified only; exporter credit at settlement), `expire()`. **Deploy v2** | B1 fixtures | forged / reused / expired / wrong-chain / old-`observedAt` rejected; each §4 example; only-the-liar-drops | v2 deployed, ABI refreshed |
 | **C5** | 12:00–15:30 | `settle()` waterfall (investors → fee → exporter), `redeem()` / `refund()` (pull, `nonReentrant`), late / `markDefault()`, importer score updates. **Deploy v3** | C4 | waterfall fuzz (outflows = inflow, no stuck dust), §4.4 cases, default path | v3 deployed |
 | **C6** | 15:30–18:00 | Admin scripts: allowlist investors, onboard importer, fund wallets, USDT approvals; security pass (access control, reentrancy, rounding, griefing on `buy` / `refund`); invariants (see TMB-00 A.5) | C5 | invariant suite, coverage report | clean |
 | **C7** | 18:00–19:00 | **Deploy v4 FINAL + verify** all contracts; announce addresses; **contract freeze 19:00** | C6 | verified | G3 |
@@ -156,7 +156,7 @@ Longest chain: **B1 → C2 → C3 → C4 → C5 → C7 → B8/B9 → rehearsal**
 | Lane | Unit | Integration | Live (testnet) |
 |---|---|---|---|
 | **A** | component + hook tests | Playwright (mock mode) | Playwright smoke with wagmi mock connector + manual run |
-| **B** | gate, scenarios, vectors, audit chain | agent ↔ mock adapter | `agent:once`, `e2e:happy / cheat / overcharge / outage / both-honest` |
+| **B** | gate, scenarios, vectors, audit chain | agent ↔ mock adapter | `agent:once`, `pnpm e2e` (honest / lag / short-weight / fake-docs / under-declared / overcharge / outage) |
 | **C** | golden vectors, per-function | fuzz + invariants, TS-signed fixtures | verify on explorer, proof txs |
 
 "Done" for every task: tests green → committed → pushed → proof link (if any) pasted into `docs/PROOFS.md`.
