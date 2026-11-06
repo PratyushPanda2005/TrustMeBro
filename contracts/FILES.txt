@@ -38,6 +38,7 @@ TrustRegistry.t.sol           Score numbers from plan section 5 (50% -> 66.67% -
 DealMath.t.sol                Money numbers from plan section 6 (70,000 / 700 fee / 69,300 / 72,800...).
 TradeDealsOrigination.t.sol   KYC, create invoice, credit limit, approve, claims, cancel.
 TradeDealsVerification.t.sol  Signature security + the weight / documents / status checks.
+TradeDealsExtras.t.sol        deadlines(), NFT safeTransferFrom / operator rules, extra KYC admins, EIP-712 domain.
 TradeDealsSettlement.t.sol    Funding, fee split, NFT transfer rules, repayment, late pay, default, expiry.
 Eip712RoundTrip.t.sol         Checks that a signature made in TypeScript is accepted by the contract.
 utils/BaseTest.sol            Shared setup for the tests (deploys, KYCs test wallets, gives them mock USDT).
@@ -52,6 +53,7 @@ package.json      Library versions (OpenZeppelin 5.4.0, forge-std 1.9.7). Instal
 .env.example      Settings for deploy (verifier address, fee wallets, KYC wallets). Copy to .env.
 .gitignore        Keeps build output, node_modules and .env out of git.
 README.md         Full integration guide for the frontend and agent teammates.
+BACKEND_GUIDE.md  Simple guide for the verifier and agent teammates: what to sign, what to send, what each result means.
 REQUIREMENTS.txt  What to install and how to build, test and deploy.
 WHY_ONCHAIN.md    Which features must be in Solidity, which could move to the backend, and the gas cost.
 
