@@ -32,18 +32,29 @@ Agent USDC 38.8 → 37.0, verifier 41.2 → 43.0: exactly the six 0.30 transfers
 | E bait and switch: retry quotes 0.90 or another payTo | none | refused before signing (pin check in `payer.ts`) |
 | F admin endpoint with a wrong token | none | 401 |
 
+### `pnpm e2e`: Hedera e2e cases (B7), one live verifier, scenario switched per deal
+4/4 PASS. Each case checked the agent's USDC balance on the Mirror Node.
+
+| Case | Hedera tx | Result |
+|---|---|---|
+| e2e:happy | [`0.0.7162784@1793947218.558655089`](https://hashscan.io/testnet/transaction/0.0.7162784@1793947218.558655089) | PASS: paid 0.30, verified, all checks true |
+| e2e:cheat | [`0.0.7162784@1793947221.285301856`](https://hashscan.io/testnet/transaction/0.0.7162784@1793947221.285301856) | PASS: paid 0.30, verifier reports the falsified weight |
+| e2e:overcharge | none | PASS: 5.00 quote held for a human, nothing paid |
+| e2e:outage | none | PASS: data source down: 503, not settled, nothing paid |
+
 ## HCS audit topic
 | Topic ID | HashScan |
 |---|---|
 | `0.0.11334995` (submit key = audit operator) | [view](https://hashscan.io/testnet/topic/0.0.11334995) |
 
-`pnpm --filter @tmb/audit verify` → `7 messages on 0.0.11334995: ✅ chain intact`:
+`pnpm audit:verify` → `10 messages on 0.0.11334995: ✅ chain intact` (rows 8–10: mock agent run with the audit outbox, after the e2e cases):
 
 | Seq (HashScan) | Kind | Note |
 |---|---|---|
 | 1–2 | quote, error | verifier returned 400 for the placeholder `TRADE_DEALS_ADDRESS`; not settled, no charge (fixed, see `config.ts`) |
 | 3–5 | quote, paid, relayed | the runtime row above |
 | 6–7 | quote, pending_human | guardrail demo |
+| 8–10 | quote, paid, relayed | mock agent run through the new audit outbox; Hedera tx `0.0.7162784@1793947255.599388219` |
 
 ## Whitechain (chain 1874)
 | What | Tx / address | Explorer |

@@ -33,15 +33,26 @@ pnpm --filter @tmb/audit create-topic   # prints AUDIT_TOPIC_ID + HashScan link 
 ## 4. Agent in mock mode (before lane C deploys)
 ```bash
 CHAIN_ADAPTER=mock pnpm agent   # emits one demo shipment → pays → "relayed" (mock) → HCS messages
-pnpm --filter @tmb/audit verify # "✅ chain intact"
+pnpm audit:verify               # "✅ chain intact"
 ```
-Guardrail demo, overcharging merchant:
+If HCS is unreachable, audit messages wait in `services/agent/.state/audit-tail-outbox.json` and go out, in order, with the next write. The chain never gets a gap.
+
+Guardrail demo, overcharging merchant: switch the running verifier to `overcharge` (no restart; the dashboard's demo panel does the same through `/api/scenario`):
 ```bash
-VERIFY_PRICE='$5.00' VERIFIER_PORT=4022 pnpm verifier
-VERIFIER_URL=http://localhost:4022 CHAIN_ADAPTER=mock pnpm agent   # → pending_human, nothing paid
-curl localhost:4002/approvals                                       # dashboard shows this
+curl -X POST localhost:4021/admin/scenario -H 'x-admin-token: <VERIFIER_ADMIN_TOKEN>' -H 'content-type: application/json' -d '{"scenario":"overcharge"}'
+CHAIN_ADAPTER=mock pnpm agent      # → quote 5.00 → pending_human, nothing paid
+curl localhost:4002/approvals      # dashboard shows this
 ```
-Note: the overcharging merchant needs its own `VERIFIER_PAYTO` value in the agent's allowlist, otherwise it's refused outright (also a valid demo).
+Add `"dealId":"0x…"` to apply a scenario to one deal only. `OVERCHARGE_PRICE` changes the 5.00.
+
+## 4b. Hedera e2e (B7, no Whitechain needed)
+```bash
+pnpm verifier      # terminal 1
+pnpm e2e           # terminal 2: happy · cheat · overcharge · outage, or `pnpm e2e outage` for one
+```
+Each case runs on a fresh deal and checks the agent's real USDC balance on the Mirror Node. It prints PASS/FAIL and rows for `docs/PROOFS.md`. `cheat` here proves the verifier reports the falsified weight; the contract-side result (only the exporter drops) is G2.
+
+`deployments/hedera-testnet.json` holds the public Hedera side (accounts, topic, facilitator, verifier signer) for lane A. Update it if you recreate accounts or the topic.
 
 ## 5. G2: real Whitechain relay (after lane C's v2)
 Set `TRADE_DEALS_ADDRESS`, `RELAYER_PRIVATE_KEY` (holds WBT), `WHITECHAIN_FROM_BLOCK`, then:
