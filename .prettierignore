@@ -2,6 +2,7 @@
 .next/
 node_modules/
 package-lock.json
+Hedera_Agentic_Payments/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
