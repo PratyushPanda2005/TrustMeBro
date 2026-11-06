@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored Claude Code skills.
     ".claude/**",
+    // Lane B (agent, x402, Hedera): own pnpm workspace, tsconfig and tests.
+    "Hedera_Agentic_Payments/**",
   ]),
 ])
 

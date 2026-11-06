@@ -1,0 +1,8 @@
+# Lane A: frontend + backend
+/apps/            @lane-a
+# Lane B: agent, x402, Hedera, Trust Code workflow
+/packages/shared/ @lane-b
+/services/        @lane-b
+# Lane C: Whitechain contracts
+/contracts/       @lane-c
+/deployments/     @lane-c
