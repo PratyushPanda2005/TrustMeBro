@@ -99,3 +99,16 @@ export const Approval = z.object({
   createdAt: z.string(),
 });
 export type Approval = z.infer<typeof Approval>;
+
+/** deployments/hedera-testnet.json: public Hedera side of the demo (G0 handoff to lane A). No keys. */
+export const HederaDeployment = z.object({
+  network: z.string(),
+  mirrorNode: z.string().url(),
+  hashscan: z.string().url(),
+  facilitator: z.object({ url: z.string().url(), feePayer: HederaAccount }),
+  usdc: z.object({ tokenId: HederaAccount, decimals: z.literal(6) }),
+  accounts: z.object({ agent: HederaAccount, verifierPayTo: HederaAccount, auditOperator: HederaAccount }),
+  verifier: z.object({ url: z.string().url(), price: z.string(), signer: Address }),
+  auditTopicId: HederaAccount,
+});
+export type HederaDeployment = z.infer<typeof HederaDeployment>;
