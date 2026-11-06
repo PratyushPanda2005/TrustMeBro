@@ -1,0 +1,27 @@
+{
+  "name": "@tmb/audit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./chain": "./src/chain.ts"
+  },
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "create-topic": "tsx src/create-topic.ts",
+    "verify": "tsx src/verify-topic.ts",
+    "associate-usdc": "tsx src/associate-usdc.ts"
+  },
+  "dependencies": {
+    "@tmb/shared": "workspace:*",
+    "@hiero-ledger/sdk": "2.90.1",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
