@@ -21,7 +21,7 @@ function signed(dealId: string, o: { observedKg?: number; statusCode?: number; d
       dealId, observedKg: o.observedKg ?? 9_850, statusCode: o.statusCode ?? STATUS.DEPARTED, docHash: o.docHash ?? demoDocHash(C),
       observedAt: String(o.observedAt ?? clock + 5), nonce: o.nonce ?? String(Math.random()).slice(2), expiry: o.expiry ?? String(clock + 600),
     },
-    signature: "0x" + "cd".repeat(65), signer: "0x" + "99".repeat(20), chainId: 1874, verifyingContract: TRADE_DEALS,
+    signature: "0x" + "cd".repeat(65), signer: "0x" + "99".repeat(20), sigHash: "0x" + "ee".repeat(32), domain: { name: "TrustMeBro", version: "1", chainId: 1874, verifyingContract: TRADE_DEALS },
   } as any;
 }
 const fresh = () => new MockChainAdapter(TRADE_DEALS, now);

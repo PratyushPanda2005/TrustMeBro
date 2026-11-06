@@ -26,6 +26,10 @@ const { sink, kind: auditSink } = makeAuditSink();
 const audit = new AuditLog(sink, auditTailFile(STATE, topic));
 const auditWrite = async (e: any) => { await audit.write(e); console.log(`[agent] ${e.kind.padEnd(13)} ${e.reason}`); };
 
+if (process.env.CHAIN_ADAPTER === "local") {
+  // agent:once already works against lane C's local stack; the relaying runtime there is the next integration step.
+  throw new Error("CHAIN_ADAPTER=local is supported by `pnpm agent:once <dealId>` for now, not the runtime");
+}
 const chain: ChainAdapter = process.env.CHAIN_ADAPTER === "whitechain"
   ? new WhitechainAdapter(need("TRADE_DEALS_ADDRESS") as Hex, need("RELAYER_PRIVATE_KEY") as Hex, BigInt(process.env.WHITECHAIN_FROM_BLOCK ?? 0))
   : new MockChainAdapter(tradeDealsOrPlaceholder());

@@ -1,25 +1,26 @@
 /** Live wiring shared by the CLI scripts (agent:once, e2e) and the runtime: real x402 payer, real ledger, env config. */
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { privateKeyToAccount } from "viem/accounts";
 import { DEMO_SHIPMENT, demoDocHash, dealIdToBytes32 } from "@tmb/shared";
 import { recoverVerificationSigner } from "@tmb/shared/sign";
 import type { AuditEvent, BuyDeps } from "./buy.ts";
 import type { ClaimedEvent } from "./chain.ts";
 import { SpendLedger } from "./ledger.ts";
 import { makePayFetch } from "./payer.ts";
-import { loadPolicy, need, tradeDealsOrPlaceholder } from "./config.ts";
+import { loadPolicy, need } from "./config.ts";
+import { chainTarget, type ChainTarget } from "./target.ts";
 
 export const verifierBase = () => process.env.VERIFIER_URL ?? "http://localhost:4021";
 
-export function liveBuyDeps(audit: (e: AuditEvent) => Promise<void>): BuyDeps {
+export function liveBuyDeps(audit: (e: AuditEvent) => Promise<void>, target: ChainTarget = chainTarget()): BuyDeps {
   return {
     url: verifierBase() + "/verify",
-    tradeDeals: tradeDealsOrPlaceholder(),
+    tradeDeals: target.tradeDeals,
+    chainId: target.chainId,
     policy: loadPolicy(),
     ledger: new SpendLedger(join(process.cwd(), ".state", "ledger.json")),
     now: Date.now,
-    expectedSigner: privateKeyToAccount(need("VERIFIER_EVM_PRIVATE_KEY") as `0x${string}`).address,
+    expectedSigner: target.expectedSigner,
     fetch,
     payFetch: makePayFetch({ accountId: need("AGENT_HEDERA_ACCOUNT_ID"), privateKey: need("AGENT_HEDERA_PRIVATE_KEY") }),
     recoverSigner: recoverVerificationSigner,

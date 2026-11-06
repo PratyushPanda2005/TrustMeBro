@@ -3,10 +3,11 @@
  *   1. unpaid probe → read the 402 quote (discovery: price, asset, payTo, Bazaar schema)
  *   2. deterministic spending gate (policy.ts); pending/deny → stop, nothing signed
  *   3. paid request (x402 client re-sends the same POST body with PAYMENT-SIGNATURE)
- *   4. validate the response: schema, deal, contract, and the EIP-712 signer
+ *   4. validate the response (lane C's format): schema, deal, chain, contract, sigHash, EIP-712 signer
  * Every step is written to the audit log (HCS).
  */
 import { VerifyResponse, type VerifyRequest, HEDERA_USDC_TESTNET } from "@tmb/shared";
+import { sigHash } from "@tmb/shared/sign";
 import { evaluate, type Policy } from "./policy.ts";
 import type { SpendLedger } from "./ledger.ts";
 import { parsePaymentRequired, parseSettlement, type PinnedPayment, type Settlement } from "./x402.ts";
@@ -27,6 +28,8 @@ export interface BuyDeps {
   url: string;
   /** Our TradeDeals: the response must be signed for it (EIP-712 verifyingContract). */
   tradeDeals: string;
+  /** The chain that TradeDeals lives on (EIP-712 domain chainId): 1874, or 31337 on lane C's local anvil. */
+  chainId: number;
   policy: Policy;
   ledger: SpendLedger;
   now: () => number;
@@ -106,17 +109,23 @@ export async function buyVerification(req: VerifyRequest, ctx: CheckContext, d: 
   d.ledger.recordPayment({ dealId: req.dealId, checkNo: ctx.checkNo, exporter: ctx.exporter, payTo: quote.payTo, amount: quote.amount, at: d.now(), hederaTxId: settlement.txId });
   await d.audit({ kind: "paid", dealId: req.dealId, reason: settlement.success ? "settled on Hedera" : `settlement unclear: ${settlement.error}`, payment: { ...payment, hederaTxId: settlement.txId, payer: settlement.payer } });
 
-  // 4. Trust nothing: schema, binding to this deal/contract, signer.
+  // 4. Trust nothing: schema, binding to this deal / chain / contract, sigHash, signer.
+  // The verifier's `expected` verdict is ignored: the contract decides.
   const parsed = VerifyResponse.safeParse(await paid.json());
   if (!parsed.success) {
     await d.audit({ kind: "error", dealId: req.dealId, reason: "malformed verifier response" });
     return { status: "untrusted", reason: "malformed response", settlement };
   }
   const r = parsed.data;
-  const bound = r.verification.dealId.toLowerCase() === req.dealId.toLowerCase() && r.verifyingContract.toLowerCase() === d.tradeDeals.toLowerCase();
-  const signer = (await d.recoverSigner(r)).toLowerCase();
-  if (!bound || signer !== d.expectedSigner.toLowerCase()) {
-    const reason = !bound ? "response bound to another deal/contract" : `signed by ${signer}, expected verifier ${d.expectedSigner}`;
+  const unbound =
+    r.verification.dealId.toLowerCase() !== req.dealId.toLowerCase() ? "response bound to another deal"
+    : r.domain.verifyingContract.toLowerCase() !== d.tradeDeals.toLowerCase() ? "response signed for another TradeDeals"
+    : r.domain.chainId !== d.chainId ? `response signed for chain ${r.domain.chainId}, expected ${d.chainId}`
+    : r.sigHash.toLowerCase() !== sigHash(r.signature as `0x${string}`).toLowerCase() ? "sigHash is not keccak256(signature)"
+    : undefined;
+  const signer = unbound ? "" : (await d.recoverSigner(r)).toLowerCase();
+  if (unbound || signer !== d.expectedSigner.toLowerCase()) {
+    const reason = unbound ?? `signed by ${signer}, expected verifier ${d.expectedSigner}`;
     await d.audit({ kind: "error", dealId: req.dealId, reason });
     return { status: "untrusted", reason, settlement };
   }

@@ -23,7 +23,7 @@ function verified(observed: { observedKg?: number; statusCode?: number } = {}) {
         dealId: req.dealId, observedKg: observed.observedKg ?? 9_850, statusCode: observed.statusCode ?? STATUS.DEPARTED,
         docHash: demoDocHash(C), observedAt: String(++clock), nonce: String(clock), expiry: String(clock + 600),
       },
-      signature: "0x" + "cd".repeat(65), signer: "0x" + "99".repeat(20), chainId: 1874 as const, verifyingContract: TRADE_DEALS,
+      signature: "0x" + "cd".repeat(65), signer: "0x" + "99".repeat(20), sigHash: "0x" + "ee".repeat(32), domain: { name: "TrustMeBro", version: "1", chainId: 1874 as const, verifyingContract: TRADE_DEALS },
     },
   });
 }

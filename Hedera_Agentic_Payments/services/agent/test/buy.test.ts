@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buyVerification, type BuyDeps } from "../src/buy.ts";
 import { SpendLedger } from "../src/ledger.ts";
 import type { Policy } from "../src/policy.ts";
+import { sigHash } from "@tmb/shared/sign";
 
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
 const DEAL = "0x" + "aa".repeat(32);
@@ -18,7 +19,10 @@ const CHECK1 = { checkNo: 1, exporter: "0x" + "22".repeat(20) };
 const request = { dealId: DEAL, shipmentRef: { containerNo: "MSKU1234567", blRef: "BL-DEMO-001" } };
 const okBody = {
   verification: { dealId: DEAL, observedKg: 9850, statusCode: 4, docHash: "0x" + "aa".repeat(32), observedAt: "1800000000", nonce: "1", expiry: "9999999999" },
-  signature: "0x" + "cd".repeat(65), signer: VERIFIER, chainId: 1874, verifyingContract: TRADE_DEALS,
+  signature: "0x" + "cd".repeat(65), signer: VERIFIER, sigHash: sigHash(`0x${"cd".repeat(65)}`),
+  domain: { name: "TrustMeBro", version: "1", chainId: 1874, verifyingContract: TRADE_DEALS },
+  // lane C's verifier also sends these; the agent ignores them (the contract decides; evidence stays off HCS)
+  expected: { outcome: "Verified", falsifiedMask: 0 }, evidence: { weighbridge: { kg: 9850 } }, check: 1,
 };
 
 function harness(opts: { price?: string; paidStatus?: number; signer?: string; payThrows?: string; body?: unknown } = {}) {
@@ -32,6 +36,7 @@ function harness(opts: { price?: string; paidStatus?: number; signer?: string; p
   const deps: BuyDeps = {
     url: "http://verifier/verify",
     tradeDeals: TRADE_DEALS,
+    chainId: 1874,
     policy, ledger, now: () => NOW,
     expectedSigner: VERIFIER,
     fetch: async () => { calls.probe++; return quote(opts.price ?? "300000"); },
@@ -134,8 +139,28 @@ test("a recheck is check 2: allowed after check 1, and check 2 is never paid twi
 });
 
 test("a response signed for another TradeDeals is untrusted (it could never verify on our contract)", async () => {
-  const h = harness({ body: { ...okBody, verifyingContract: "0x" + "33".repeat(20) } });
+  const h = harness({ body: { ...okBody, domain: { ...okBody.domain, verifyingContract: "0x" + "33".repeat(20) } } });
   const r = await buyVerification(request, CHECK1, h.deps);
   assert.equal(r.status, "untrusted");
-  assert.match(h.audit.at(-1).reason, /another deal\/contract/);
+  assert.match(h.audit.at(-1).reason, /another TradeDeals/);
+});
+
+test("a response signed for another chain is untrusted (e.g. local anvil 31337 while we target Whitechain 1874)", async () => {
+  const h = harness({ body: { ...okBody, domain: { ...okBody.domain, chainId: 31337 } } });
+  const r = await buyVerification(request, CHECK1, h.deps);
+  assert.equal(r.status, "untrusted");
+  assert.match(h.audit.at(-1).reason, /chain 31337, expected 1874/);
+});
+
+test("a sigHash that isn't keccak256(signature) is untrusted: it would break the HCS ↔ Whitechain link", async () => {
+  const h = harness({ body: { ...okBody, sigHash: "0x" + "ee".repeat(32) } });
+  const r = await buyVerification(request, CHECK1, h.deps);
+  assert.equal(r.status, "untrusted");
+  assert.match(h.audit.at(-1).reason, /sigHash/);
+});
+
+test("a response for another deal is untrusted", async () => {
+  const h = harness({ body: { ...okBody, verification: { ...okBody.verification, dealId: "0x" + "bb".repeat(32) } } });
+  assert.equal((await buyVerification(request, CHECK1, h.deps)).status, "untrusted");
+  assert.match(h.audit.at(-1).reason, /another deal/);
 });
