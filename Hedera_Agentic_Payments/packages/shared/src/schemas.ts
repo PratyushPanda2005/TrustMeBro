@@ -1,6 +1,5 @@
-/** Wire schemas shared by verifier, agent and dashboard. Frozen at gate G0. */
+/** Wire schemas shared by verifier, agent and dashboard. Plan v5 (docs/plans/TMB-00-master-plan.md §8, §9). */
 import { z } from "zod";
-import type { Checks } from "./trust.ts";
 import { WHITECHAIN_CHAIN_ID } from "./constants.ts";
 
 export const Hex32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected 32-byte hex");
@@ -9,42 +8,30 @@ export const HexSig = z.string().regex(/^0x[0-9a-fA-F]{130}$/, "expected 65-byte
 export const UintString = z.string().regex(/^\d+$/, "uint256 as decimal string");
 export const HederaAccount = z.string().regex(/^0\.0\.\d+$/, "expected 0.0.x account");
 
-/** Exporter claims, using the names the business side uses. */
-export const Claims = z.object({
-  weight: z.boolean(),
-  status_code: z.boolean(),
-  document_verification: z.boolean(),
-}).strict();
-export type Claims = z.infer<typeof Claims>;
-
-/** The only place JSON claim names are mapped to EIP-712 / Solidity names. */
-export function claimsToChecks(c: Claims): Checks {
-  return { weight: c.weight, statusCode: c.status_code, documents: c.document_verification };
-}
-export function checksToClaims(c: Checks): Claims {
-  return { weight: c.weight, status_code: c.statusCode, document_verification: c.documents };
-}
-
-export const Shipment = z.object({
+/** Carrier references from the deal's Claimed event (same limits as TradeDeals.declareClaims). */
+export const ShipmentRef = z.object({
   containerNo: z.string().min(1).max(32),
   blRef: z.string().max(64).optional(),
-  docHash: Hex32.optional(),
-});
+}).strict();
+export type ShipmentRef = z.infer<typeof ShipmentRef>;
 
-/** Body of POST /verify (x402-protected). */
+/**
+ * Body of POST /verify (x402-protected), plan v5 §8. Claims are already on chain, so the agent
+ * never sends them and can't launder a lie. The verifier signs for its configured TradeDeals.
+ */
 export const VerifyRequest = z.object({
   dealId: Hex32,
-  tradeDeals: Address, // EIP-712 verifyingContract
-  claims: Claims,
-  shipment: Shipment,
-});
+  shipmentRef: ShipmentRef,
+}).strict();
 export type VerifyRequest = z.infer<typeof VerifyRequest>;
 
+/** The signed Verification as JSON (uint64/uint256 as decimal strings). */
 export const VerificationJson = z.object({
   dealId: Hex32,
-  weight: z.boolean(),
-  statusCode: z.boolean(),
-  documents: z.boolean(),
+  observedKg: z.number().int().min(0).max(0xffffffff),
+  statusCode: z.number().int().min(0).max(5),
+  docHash: Hex32,
+  observedAt: UintString,
   nonce: UintString,
   expiry: UintString,
 });
@@ -66,7 +53,7 @@ export const HcsMessage = z.object({
   seq: z.number().int().nonnegative(),
   prevHash: z.string().regex(/^[0-9a-f]{64}$/),
   ts: z.string(),
-  kind: z.enum(["quote", "paid", "refused", "pending_human", "approved", "relayed", "skipped", "error"]),
+  kind: z.enum(["quote", "paid", "refused", "pending_human", "approved", "relayed", "recheck", "skipped", "error"]),
   dealId: Hex32.optional(),
   reason: z.string().max(200),
   payment: z.object({
@@ -74,9 +61,18 @@ export const HcsMessage = z.object({
     amount: UintString,
     asset: z.string(),
     hederaTxId: z.string().optional(),
+    payer: z.string().optional(), // the agent account in PAYMENT-RESPONSE (the tx id names the facilitator)
   }).optional(),
   whitechainTx: Hex32.optional(),
-  verificationHash: Hex32.optional(),
+  /** keccak256(signature): links the Hedera payment to VerificationSubmitted on Whitechain (plan v5 §8, Option A). */
+  sigHash: Hex32.optional(),
+  /** What the contract decided on relay and the exporter's score in bps before and after (plan v5 §4, §5.2). */
+  trust: z.object({
+    exporter: Address,
+    outcome: z.enum(["verified", "pending", "rejected", "mismatch"]),
+    beforeBps: z.number().int().min(0).max(10_000),
+    afterBps: z.number().int().min(0).max(10_000),
+  }).optional(),
   hash: z.string().regex(/^[0-9a-f]{64}$/),
 });
 export type HcsMessage = z.infer<typeof HcsMessage>;
