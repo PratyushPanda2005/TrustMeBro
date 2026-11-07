@@ -197,8 +197,12 @@ async function readFresh(): Promise<TradeState> {
     byDeal.set(id, [...(byDeal.get(id) ?? []), log])
   }
 
-  const labels = readLabels()
-  const metadata = readTradeMetadata()
+  const [labels, metadata, names, agentBeat] = await Promise.all([
+    readLabels(),
+    readTradeMetadata(),
+    readPartyNames(),
+    agentBeating(),
+  ])
   const now = Date.now()
 
   const deals = await Promise.all(
@@ -328,7 +332,6 @@ async function readFresh(): Promise<TradeState> {
     }
   }
 
-  const names = readPartyNames()
   const parties = await Promise.all(
     [...members].map(async ([id, role]): Promise<Party> => {
       const wallet = id as Address
@@ -387,7 +390,7 @@ async function readFresh(): Promise<TradeState> {
     hedera,
     pending: approvals.pending,
     relays: readRelayPayloads(),
-    agentOnline: approvals.online || agentBeating(),
+    agentOnline: approvals.online || agentBeat,
   }
 }
 

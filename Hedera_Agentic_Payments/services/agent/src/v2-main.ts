@@ -1,4 +1,5 @@
 ﻿import { readFileSync, writeFileSync } from "node:fs";
+import { pullHostedTrades, sendHostedHeartbeat } from "./v2-dashboard.ts";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, type Hex } from "viem";
@@ -181,6 +182,7 @@ async function main() {
     );
     const heartbeat = join(root, "agent-heartbeat.json");
     const tick = async () => {
+      await pullHostedTrades(file);
       // The dashboard saves new trades here, so a running worker has to reread it.
       metadata = readMetadata();
       for (const id of await chain.confirmed()) {
@@ -216,6 +218,7 @@ async function main() {
       try {
         await tick();
         writeFileSync(heartbeat, JSON.stringify({ at: Date.now() }));
+        await sendHostedHeartbeat();
       } catch (error) {
         if (process.argv.includes("--once")) throw error;
         console.error(`Tick failed: ${(error as Error).message}`);

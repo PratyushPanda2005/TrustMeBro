@@ -10,6 +10,7 @@ import {
 import { dirname, join, resolve } from "node:path"
 
 import type { Metadata } from "@trustmebro/shared/v2"
+import { Redis } from "@upstash/redis"
 
 export const RPC_URL =
   process.env.WHITECHAIN_RPC ?? "https://rpc.testnet.whitechain.io"
@@ -62,47 +63,82 @@ const labelsFile = join(agentState, "deal-labels.json")
 const namesFile = join(agentState, "party-names.json")
 const heartbeatFile = join(agentState, "agent-heartbeat.json")
 
-export type DealLabels = Record<string, { goods: string; invoiceRef: string }>
+/** Hosting has no writable disk, so a deployment keeps these in Redis instead. */
+const redis =
+  process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
+    ? new Redis({
+        url: process.env.KV_REST_API_URL,
+        token: process.env.KV_REST_API_TOKEN,
+      })
+    : undefined
+
+const readAll = async <T>(name: string, file: string) =>
+  redis
+    ? ((await redis.hgetall<Record<string, T>>(`tmb:${name}`)) ?? {})
+    : json<Record<string, T>>(file, {})
+
+const saveOne = async <T>(
+  name: string,
+  file: string,
+  key: string,
+  value: T,
+) => {
+  if (redis) await redis.hset(`tmb:${name}`, { [key]: value })
+  else write(file, { ...json<Record<string, T>>(file, {}), [key]: value })
+}
+
+export type DealLabel = { goods: string; invoiceRef: string }
 
 /** Goods names and invoice numbers stay off-chain. Only their hashes are onchain. */
-export const readLabels = () => json<DealLabels>(labelsFile, {})
+export const readLabels = () => readAll<DealLabel>("labels", labelsFile)
 
 export const readTradeMetadata = () =>
-  json<Record<string, Metadata>>(metadataFile, {})
+  readAll<Metadata>("metadata", metadataFile)
 
-/** The agent reads this file, so a new trade can be checked without a manual step. */
-export function saveTrade(
+/** The agent reads these, so a new trade can be checked without a manual step. */
+export async function saveTrade(
   id: string,
   metadata: Metadata,
-  label: DealLabels[string],
+  label: DealLabel,
 ) {
-  write(metadataFile, { ...readTradeMetadata(), [id]: metadata })
-  write(labelsFile, { ...readLabels(), [id]: label })
+  await saveOne("metadata", metadataFile, id, metadata)
+  await saveOne("labels", labelsFile, id, label)
 }
 
 /** The V2 agent has no API, so it records each poll here. */
-export const agentBeating = () =>
-  Date.now() - json(heartbeatFile, { at: 0 }).at < AGENT_SILENCE_MS
+export async function agentBeating() {
+  const beat = redis
+    ? await redis.get<{ at: number }>("tmb:heartbeat")
+    : json(heartbeatFile, { at: 0 })
+  return Date.now() - (beat?.at ?? 0) < AGENT_SILENCE_MS
+}
+
+export async function saveHeartbeat() {
+  await redis?.set("tmb:heartbeat", { at: Date.now() })
+}
 
 type SavedName = { name: string; tx: string }
 
-const savedNames = () => json<Record<string, SavedName>>(namesFile, {})
+const savedNames = () => readAll<SavedName>("names", namesFile)
 
 /** Names the admin gave parties, over the configured ones. */
-export const readPartyNames = () => ({
+export const readPartyNames = async () => ({
   ...configuredNames,
   ...Object.fromEntries(
-    Object.entries(savedNames()).map(([wallet, saved]) => [wallet, saved.name]),
+    Object.entries(await savedNames()).map(([wallet, saved]) => [
+      wallet,
+      saved.name,
+    ]),
   ),
 })
 
-export function savePartyName(wallet: string, name: string, tx: string) {
-  const names = savedNames()
+export async function savePartyName(wallet: string, name: string, tx: string) {
+  const names = await savedNames()
   // One grant names one party, so its transaction can't be replayed to rename.
   if (Object.values(names).some((saved) => saved.tx === tx)) {
     throw new Error("This transaction already named a party.")
   }
-  write(namesFile, { ...names, [wallet]: { name, tx } })
+  await saveOne("names", namesFile, wallet, { name, tx })
 }
 
 type Payload = {

@@ -2,6 +2,9 @@
   "name": "trustmebro",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,6 +18,7 @@
     "@base-ui/react": "^1.9.0",
     "@shadcn/react": "^0.3.1",
     "@trustmebro/shared": "file:packages/shared",
+    "@upstash/redis": "^1.41.0",
     "class-variance-authority": "^0.7.1",
     "cmdk": "^1.1.1",
     "cn": "^0.5.2",

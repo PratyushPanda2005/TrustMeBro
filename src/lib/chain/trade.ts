@@ -70,7 +70,7 @@ async function saveParty(wallet: string, name: string, tx: Hash) {
   if (!(await isAdmin(receipt.from))) {
     throw new Error("Only an admin can name a party.")
   }
-  savePartyName(account, name.trim().slice(0, NAME_LIMIT), tx)
+  await savePartyName(account, name.trim().slice(0, NAME_LIMIT), tx)
 }
 
 /** Transactions are signed in the wallet. The server never holds a key. */
@@ -99,7 +99,7 @@ export async function runAction(action: TradeAction) {
     })
     // The commitments onchain decide what is true, so a mismatch is refused.
     validateMetadata(deal as never, action.metadata)
-    saveTrade(action.id, action.metadata, {
+    await saveTrade(action.id, action.metadata, {
       goods: action.goods,
       invoiceRef: action.invoiceRef,
     })
