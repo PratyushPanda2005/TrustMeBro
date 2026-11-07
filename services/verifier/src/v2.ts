@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import express from "express";
 import { createPublicClient, http, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { demoEvidence } from "./demo-evidence.js";
 import {
   ADMIN_ROLE,
   ADMIN,
@@ -36,7 +37,11 @@ export interface V2Reader {
 }
 export interface Provider {
   mode: "real" | "demo";
-  observe(request: VerificationRequest): Promise<Evidence | undefined>;
+  /** `now` is the time the request is judged at, so evidence can't postdate it. */
+  observe(
+    request: VerificationRequest,
+    now?: bigint,
+  ): Promise<Evidence | undefined>;
 }
 export function chainReader(
   rpc: string,
@@ -70,8 +75,20 @@ export async function configuredProvider(
   mode: string,
   module?: string,
   fixture?: string,
+  /** Simulates a fresh observation per trade. Set only by an explicit opt-in. */
+  autoEvidence?: V2Reader,
 ): Promise<Provider> {
   if (mode === "demo") {
+    if (autoEvidence)
+      return {
+        mode: "demo",
+        observe: async (r, now) =>
+          demoEvidence(
+            await autoEvidence.deal(uint(r.tradeId)),
+            r.metadata,
+            now ?? (await autoEvidence.time()),
+          ),
+      };
     if (!fixture)
       throw Error(
         "Demo requires an independent fixture file; no observations are derived from claims",
@@ -216,7 +233,7 @@ export function createV2App(d: Deps, payment?: express.RequestHandler) {
               .json({ error: "cached_attestation_expired_no_repurchase" });
           return res.json(cached);
         }
-        const evidence = await d.provider.observe(r);
+        const evidence = await d.provider.observe(r, now);
         const report = await issueV2Report(
           d,
           r,

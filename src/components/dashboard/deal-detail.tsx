@@ -25,12 +25,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { date, dateTime, shortHash, usdt } from "@/lib/trade/format"
-import { STAGES, exporterScoreView, importerScoreView } from "@/lib/trade/score"
-import { getParty, useTrade } from "@/lib/trade/store"
+import { STAGES } from "@/lib/trade/score"
+import { canView, getParty, useMe, useTrade } from "@/lib/trade/store"
 import type { Deal, Role } from "@/lib/trade/types"
 
 import { DealActions } from "./deal-actions"
-import { PageHeader, ScoreBadge, StateBadge, TxHash } from "./parts"
+import { PageHeader, StateBadge, TrustScore, TxHash } from "./parts"
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -121,15 +121,16 @@ function EvidenceCard({ deal }: { deal: Deal }) {
 export function DealDetail({ role }: { role: Role }) {
   const { id } = useParams<{ id: string }>()
   const state = useTrade()
+  const me = useMe()
   const deal = state.deals.find((item) => item.id === id)
 
-  if (!deal) {
+  if (!deal || !canView(deal, role, me)) {
     return (
       <Empty>
         <EmptyHeader>
           <EmptyTitle>Deal not found</EmptyTitle>
           <EmptyDescription>
-            Trade {id} isn&apos;t on Whitechain.
+            Trade {id} isn&apos;t available to this wallet.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -172,27 +173,13 @@ export function DealDetail({ role }: { role: Role }) {
                 ) : null}
                 <Separator />
                 <Row
-                  label="Exporter Trust Score"
-                  value={
-                    <span className="flex items-center gap-2">
-                      {exporter.score}
-                      <ScoreBadge view={exporterScoreView(exporter.score)} />
-                    </span>
-                  }
-                />
-                <Row
-                  label="Importer Risk Score"
-                  value={
-                    <span className="flex items-center gap-2">
-                      {importerScoreView(importer.score).value}
-                      <ScoreBadge view={importerScoreView(importer.score)} />
-                    </span>
-                  }
+                  label="Importer Trust Score"
+                  value={<TrustScore party={importer} />}
                 />
                 {terms ? (
                   <>
                     <Separator />
-                    <Row label="Deal score" value={terms.score} />
+                    <Row label="Trust Score used" value={terms.score} />
                     <Row label="Advance" value={usdt(terms.advance)} />
                     <Row label="Investor profit" value={usdt(terms.profit)} />
                     <Row

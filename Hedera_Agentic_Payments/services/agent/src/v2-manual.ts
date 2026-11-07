@@ -186,7 +186,12 @@ async function main() {
     await exportPayload(existing);
     return;
   }
-  if (existing && existing.state !== "ready") {
+  // A payment_unknown job only rechecks its saved payment in processV2. It can't pay again.
+  if (
+    existing &&
+    existing.state !== "ready" &&
+    existing.state !== "payment_unknown"
+  ) {
     console.log(`Existing job ${existing.state}; no new purchase.`);
     if (existing.manualPayload) await exportPayload(existing);
     return;

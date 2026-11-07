@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table"
 import { amount, usdt } from "@/lib/trade/format"
 import { investorProfit } from "@/lib/trade/profit"
-import { useTrade } from "@/lib/trade/store"
+import { useMe, useTrade } from "@/lib/trade/store"
 
 import { MonthlyBars } from "../charts"
 import { DealTable } from "../deal-table"
@@ -30,7 +30,7 @@ const useInvestor = () => {
   const state = useTrade()
   return {
     state,
-    profit: investorProfit(state, state.personas.investor),
+    profit: investorProfit(state, useMe()),
     open: state.deals.filter((deal) => deal.state === "Verified"),
   }
 }
@@ -80,6 +80,7 @@ export function InvestorOverview() {
             role="investor"
             deals={open}
             variant="market"
+            action="Review and fund"
             emptyText="No deals are open right now."
           />
         </CardContent>
@@ -94,7 +95,7 @@ export function InvestorDeals() {
     <>
       <PageHeader
         title="Open deals"
-        description="Check the evidence, both scores and the terms before you fund."
+        description="Check the evidence, the importer's Trust Score and the terms before you fund."
       />
       <Card>
         <CardContent>
@@ -102,6 +103,7 @@ export function InvestorDeals() {
             role="investor"
             deals={open}
             variant="market"
+            action="Review and fund"
             emptyText="No deals are open right now."
           />
         </CardContent>

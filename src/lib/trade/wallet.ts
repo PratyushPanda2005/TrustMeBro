@@ -12,11 +12,16 @@ import {
   erc20Abi,
   keccak256,
   numberToHex,
+  stringToHex,
   type Address,
   type EIP1193Provider,
   type Hash,
   type Hex,
 } from "viem"
+
+import type { Party } from "./types"
+
+type PartyRole = Party["role"]
 
 declare global {
   interface Window {
@@ -24,7 +29,13 @@ declare global {
   }
 }
 
-export type Wallet = { address?: Address; chainId?: number; installed: boolean }
+export type Wallet = {
+  address?: Address
+  chainId?: number
+  installed: boolean
+  /** The first read finished, so `address` can be trusted. */
+  ready: boolean
+}
 
 const chain = {
   ...whitechainTestnet,
@@ -33,7 +44,7 @@ const chain = {
   },
 }
 
-let wallet: Wallet = { installed: false }
+let wallet: Wallet = { installed: false, ready: false }
 const listeners = new Set<() => void>()
 
 const publish = (next: Wallet) => {
@@ -43,13 +54,14 @@ const publish = (next: Wallet) => {
 
 async function read() {
   const provider = window.ethereum
-  if (!provider) return publish({ installed: false })
+  if (!provider) return publish({ installed: false, ready: true })
   const [accounts, chainId] = await Promise.all([
     provider.request({ method: "eth_accounts" }),
     provider.request({ method: "eth_chainId" }),
   ])
   publish({
     installed: true,
+    ready: true,
     address: accounts[0],
     chainId: Number(chainId),
   })
@@ -71,7 +83,7 @@ function subscribe(listener: () => void) {
   }
 }
 
-const empty: Wallet = { installed: false }
+const empty: Wallet = { installed: false, ready: false }
 
 export const useWallet = () =>
   useSyncExternalStore(
@@ -85,6 +97,17 @@ export async function connectWallet() {
   if (!provider) throw new Error("Install MetaMask to sign transactions.")
   await provider.request({ method: "eth_requestAccounts" })
   await switchChain()
+  await read()
+}
+
+/** Opens the wallet's account picker, to sign in as a different party. */
+export async function chooseWallet() {
+  const provider = window.ethereum
+  if (!provider) throw new Error("Install MetaMask to sign transactions.")
+  await provider.request({
+    method: "wallet_requestPermissions",
+    params: [{ eth_accounts: {} }],
+  })
   await read()
 }
 
@@ -170,7 +193,24 @@ export const quoteHash = (raw: readonly string[]) =>
 
 const LISTING_MINUTES = 10
 
+const roleId = (role: PartyRole) =>
+  keccak256(stringToHex(`${role.toUpperCase()}_ROLE`))
+
 export const chainActions = {
+  grantRole: (admin: string, role: PartyRole, account: string) =>
+    send(admin, {
+      functionName: "grantRole",
+      args: [roleId(role), account],
+    }),
+  revokeRole: (admin: string, role: PartyRole, account: string) =>
+    send(admin, {
+      functionName: "revokeRole",
+      args: [roleId(role), account],
+    }),
+  sign: async (from: string, message: string) => {
+    const { account, writer } = await clients(from)
+    return writer.signMessage({ account, message })
+  },
   createTrade: async (exporter: string, terms: unknown) => {
     const receipt = await send(exporter, {
       functionName: "createTrade",

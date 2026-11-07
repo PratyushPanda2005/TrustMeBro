@@ -38,8 +38,8 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { usdt } from "@/lib/trade/format"
 import { exporterProfit } from "@/lib/trade/profit"
-import { estimateTerms, exporterScoreView } from "@/lib/trade/score"
-import { actions, getParty, useTrade } from "@/lib/trade/store"
+import { estimateTerms } from "@/lib/trade/score"
+import { actions, getParty, useMe, useTrade } from "@/lib/trade/store"
 
 import { MonthlyBars } from "../charts"
 import { DealTable } from "../deal-table"
@@ -47,13 +47,12 @@ import { PageHeader, StatCard, StatGrid } from "../parts"
 
 const useExporter = () => {
   const state = useTrade()
-  return { state, profit: exporterProfit(state, state.personas.exporter) }
+  const me = useMe()
+  return { state, me, profit: exporterProfit(state, me) }
 }
 
 export function ExporterOverview() {
-  const { state, profit } = useExporter()
-  const exporter = getParty(state, state.personas.exporter)
-  const score = exporterScoreView(exporter.score)
+  const { profit } = useExporter()
   const last = profit.deals.find((deal) => deal.terms)
   const active = profit.deals.filter(
     (deal) =>
@@ -75,15 +74,15 @@ export function ExporterOverview() {
       </PageHeader>
       <StatGrid>
         <StatCard
-          label="Trust Score"
-          value={score.value}
-          hint={score.band}
+          label="Importer Trust Score"
+          value={last?.terms?.score ?? "-"}
+          hint="On your latest deal. It sets the advance"
           icon={Gauge}
         />
         <StatCard
-          label="Latest deal score"
-          value={last?.terms?.score ?? "-"}
-          hint="Sets the advance"
+          label="Advances"
+          value={usdt(profit.advances)}
+          hint="Paid when an investor funds"
           icon={HandCoins}
         />
         <StatCard
@@ -212,9 +211,9 @@ const fields: {
 export function ExporterNewInvoice() {
   const state = useTrade()
   const router = useRouter()
-  const exporter = getParty(state, state.personas.exporter)
+  const exporter = getParty(state, useMe())
   const importers = state.parties
-    .filter((party) => party.role === "importer")
+    .filter((party) => party.role === "importer" && party.active)
     .map((party) => ({ value: party.id, label: party.name }))
   const [form, setForm] = useState(emptyInvoice)
   const [importerId, setImporterId] = useState(importers[0]?.value ?? "")
@@ -224,8 +223,8 @@ export function ExporterNewInvoice() {
 
   const importer = importerId ? getParty(state, importerId) : undefined
   const value = Number(form.amount) || 0
-  const latest = state.deals.find((deal) => deal.terms)?.terms?.score ?? 60
-  const terms = estimateTerms(value, latest)
+  const dealScore = importer?.score ?? 60
+  const terms = estimateTerms(value, dealScore)
   const tooBig = importer ? value > importer.usdt : false
   const ready =
     Object.values(form).every((item) => item.trim()) &&
@@ -313,8 +312,8 @@ export function ExporterNewInvoice() {
           <CardHeader>
             <CardTitle>Estimated terms</CardTitle>
             <CardDescription>
-              At deal score {latest}. The contract sets the real quote after
-              verification.
+              At the importer&apos;s Trust Score of {dealScore}. The contract
+              sets the real quote after verification.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">

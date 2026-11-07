@@ -1,62 +1,48 @@
-import type { Party } from "./types"
-
 /**
  * Finance V2's source isn't in this repository, so these mirror what its live
  * trades show. `quote()` on the contract is always the source of truth.
  */
 export const STAGES = ["None", "Dispatched", "In transit", "Delivered"]
-const HAIRCUT = 0.97
-const YIELD = 0.03
-const FEE = 0.01
-
 export const VERIFY_PRICE = 0.3
 
+/** The importer reputation every new importer starts at, and its ceiling. */
+export const START_SCORE = 60
+export const MAX_SCORE = 93
+
 export type ScoreView = {
-  label: "Trust Score" | "Risk Score"
   value: number
   band: string
   tone: "good" | "neutral" | "bad"
 }
 
-/** Exporters: higher is better. */
-export function exporterScoreView(score: number): ScoreView {
-  const tone = score >= 75 ? "good" : score >= 40 ? "neutral" : "bad"
+/** The importer's Trust Score. Higher is better, and it sets the advance. */
+export function trustScoreView(score: number): ScoreView {
+  const tone = score >= 75 ? "good" : score >= 50 ? "neutral" : "bad"
   return {
-    label: "Trust Score",
     value: score,
     band: { good: "High", neutral: "Medium", bad: "Low" }[tone],
     tone,
   }
 }
 
-/** Importers: lower is better, as the inverse of the contract's score. */
-export function importerScoreView(score: number): ScoreView {
-  const value = 100 - score
-  const tone = value <= 25 ? "good" : value <= 50 ? "neutral" : "bad"
-  return {
-    label: "Risk Score",
-    value,
-    band: { good: "Low risk", neutral: "Medium risk", bad: "High risk" }[tone],
-    tone,
-  }
-}
+const UNIT = 1_000_000
 
-export const partyScoreView = (party: Party) =>
-  party.role === "exporter"
-    ? exporterScoreView(party.score)
-    : importerScoreView(party.score)
-
-/** A preview at a given deal score. The contract's own quote replaces it. */
+/**
+ * A preview at a given Trust Score. It rounds down in token units as the
+ * contract does, and the contract's own quote replaces it.
+ */
 export function estimateTerms(amount: number, score: number) {
-  const advance = amount * (score / 100) * HAIRCUT
-  const profit = advance * YIELD
-  const fee = amount * FEE
+  const invoice = Math.round(amount * UNIT)
+  const base = Math.floor((invoice * 97) / 100)
+  const advance = Math.floor((base * score) / 100)
+  const profit = Math.floor((advance * 3) / 100)
+  const fee = Math.floor(invoice / 100)
   const investorDue = advance + profit
   return {
-    advance,
-    profit,
-    fee,
-    investorDue,
-    exporterRemainder: Math.max(amount - investorDue - fee, 0),
+    advance: advance / UNIT,
+    profit: profit / UNIT,
+    fee: fee / UNIT,
+    investorDue: investorDue / UNIT,
+    exporterRemainder: Math.max(invoice - investorDue - fee, 0) / UNIT,
   }
 }

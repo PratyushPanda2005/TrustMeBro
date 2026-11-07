@@ -1,4 +1,4 @@
-﻿import { readFileSync } from "node:fs";
+﻿import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, type Hex } from "viem";
@@ -106,15 +106,16 @@ async function main() {
       "SIMULATED SHIPMENT EVIDENCE: real testnet payment/relay, no independent real-world shipment verification.",
     );
   const file = existingFile(process.env.V2_METADATA_FILE, "V2_METADATA_FILE");
-  const metadata = await startupStep(
+  const readMetadata = () => {
+    const value = JSON.parse(readFileSync(file, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw Error();
+    return value as Record<string, Metadata>;
+  };
+  let metadata = await startupStep(
     "METADATA_INVALID",
     "Correct V2_METADATA_FILE JSON; preserve original commitment preimages.",
-    () => {
-      const value = JSON.parse(readFileSync(file, "utf8"));
-      if (!value || typeof value !== "object" || Array.isArray(value))
-        throw Error();
-      return value as Record<string, Metadata>;
-    },
+    readMetadata,
   );
   // Imported only after explicit live execution has been requested and validated.
   const [
@@ -178,7 +179,10 @@ async function main() {
       "Inspect the existing ledger without deleting or resetting it.",
       () => new SpendLedger(join(root, "ledger.json")),
     );
-    do {
+    const heartbeat = join(root, "agent-heartbeat.json");
+    const tick = async () => {
+      // The dashboard saves new trades here, so a running worker has to reread it.
+      metadata = readMetadata();
       for (const id of await chain.confirmed()) {
         const deal = await chain.deal(id);
         if (!deal.importerApproved) continue;
@@ -205,6 +209,16 @@ async function main() {
             confirmHederaPayment(s, q, process.env.AGENT_HEDERA_ACCOUNT_ID!, t),
         });
         console.log(`Trade ${id}: ${job.state}`);
+      }
+    };
+    do {
+      // Jobs are durable and never repurchase, so one failed tick just retries.
+      try {
+        await tick();
+        writeFileSync(heartbeat, JSON.stringify({ at: Date.now() }));
+      } catch (error) {
+        if (process.argv.includes("--once")) throw error;
+        console.error(`Tick failed: ${(error as Error).message}`);
       }
       if (process.argv.includes("--once")) break;
       await new Promise((r) => setTimeout(r, poll));

@@ -19,4 +19,5 @@ Next.js App Router, TypeScript, Tailwind CSS v4, shadcn/ui on Base UI (`base-nov
 - Style with the semantic tokens in `src/app/globals.css` (`bg-background`, `text-muted-foreground`), not raw colors.
 - Providers are mounted in the two root layouts, `src/app/(marketing)/layout.tsx` and `src/app/(dashboard)/layout.tsx`.
 - Dashboards read Finance V2 through `/api/trade` and `src/lib/chain`. Transactions are signed in the browser wallet by `src/lib/trade/wallet.ts`. The server holds no keys.
+- A wallet's role on Finance V2 decides its dashboard (`roleOf` in `src/lib/trade/store.ts`). There is no role switcher.
 - Project skills live in `.claude/skills`.

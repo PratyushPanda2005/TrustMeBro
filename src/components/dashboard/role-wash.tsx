@@ -1,8 +1,6 @@
 "use client"
 
-import { usePathname } from "next/navigation"
-
-import { roleFromPath } from "./nav"
+import type { Role } from "@/lib/trade/types"
 
 /** The tint each side of the deal wears on the landing page. */
 const washes = {
@@ -13,8 +11,8 @@ const washes = {
 }
 
 /** The landing's wash and dot grid, fading out behind the page header. */
-export function RoleWash() {
-  const wash = washes[roleFromPath(usePathname())]
+export function RoleWash({ role }: { role: Role }) {
+  const wash = washes[role]
 
   return (
     <div

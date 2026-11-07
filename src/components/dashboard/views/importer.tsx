@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/card"
 import { usdt } from "@/lib/trade/format"
 import { importerPayments } from "@/lib/trade/profit"
-import { importerScoreView } from "@/lib/trade/score"
-import { getParty, useTrade } from "@/lib/trade/store"
+import { trustScoreView } from "@/lib/trade/score"
+import { getParty, useMe, useTrade } from "@/lib/trade/store"
 
 import { MonthlyBars } from "../charts"
 import { DealTable } from "../deal-table"
@@ -20,17 +20,19 @@ import { PageHeader, StatCard, StatGrid } from "../parts"
 
 const useImporter = () => {
   const state = useTrade()
-  const data = importerPayments(state, state.personas.importer)
+  const me = useMe()
+  const data = importerPayments(state, me)
   return {
     state,
+    me,
     data,
     approvals: data.deals.filter((deal) => deal.state === "Created"),
   }
 }
 
 export function ImporterOverview() {
-  const { state, data, approvals } = useImporter()
-  const view = importerScoreView(getParty(state, state.personas.importer).score)
+  const { state, me, data, approvals } = useImporter()
+  const view = trustScoreView(getParty(state, me).score)
   return (
     <>
       <PageHeader
@@ -39,7 +41,7 @@ export function ImporterOverview() {
       />
       <StatGrid>
         <StatCard
-          label="Risk Score"
+          label="Trust Score"
           value={view.value}
           hint={view.band}
           icon={Gauge}
@@ -69,6 +71,7 @@ export function ImporterOverview() {
           <DealTable
             role="importer"
             deals={approvals}
+            action="Review"
             emptyText="You're all caught up."
           />
         </CardContent>
@@ -81,6 +84,7 @@ export function ImporterOverview() {
           <DealTable
             role="importer"
             deals={data.due}
+            action="Repay"
             emptyText="No payments are due."
           />
         </CardContent>
@@ -102,6 +106,7 @@ export function ImporterApprovals() {
           <DealTable
             role="importer"
             deals={approvals}
+            action="Review"
             emptyText="You're all caught up."
           />
         </CardContent>
@@ -111,22 +116,22 @@ export function ImporterApprovals() {
 }
 
 export function ImporterPayments() {
-  const { state, data } = useImporter()
-  const importer = getParty(state, state.personas.importer)
+  const { state, me, data } = useImporter()
+  const importer = getParty(state, me)
   return (
     <>
       <PageHeader
         title="Payments"
-        description="Your invoices, and how your record sets the yield."
+        description="Your invoices, and how your record sets the advance."
       />
       <StatGrid>
         <StatCard label="Payments due" value={usdt(data.totalDue)} />
         <StatCard label="Paid so far" value={usdt(data.totalPaid)} />
         <StatCard label="Invoices paid" value={data.paid.length} />
         <StatCard
-          label="Risk Score"
-          value={importerScoreView(importer.score).value}
-          hint="Lower means cheaper trade"
+          label="Trust Score"
+          value={importer.score}
+          hint="Higher means a bigger advance"
         />
       </StatGrid>
       <Card>

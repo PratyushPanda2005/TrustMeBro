@@ -24,6 +24,8 @@ export type Party = {
   id: string
   name: string
   role: Exclude<Role, "admin">
+  /** False once the admin removes the role. Past deals still name the party. */
+  active: boolean
   /** `Reputation.score`, out of 100. */
   score: number
   usdt: number
@@ -139,7 +141,8 @@ export type Network = {
 
 export type TradeState = {
   network: Network
-  personas: Record<Exclude<Role, "admin">, string>
+  /** Wallets holding Finance V2's admin role. */
+  admins: string[]
   parties: Party[]
   deals: Deal[]
   hedera: { topicId: string; entries: AuditEntry[] }

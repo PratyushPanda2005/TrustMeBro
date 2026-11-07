@@ -2,17 +2,9 @@
 
 import { Suspense } from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 
 import { Logo } from "@/components/landing/logo"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Sidebar,
   SidebarContent,
@@ -25,47 +17,26 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { getParty, useTrade } from "@/lib/trade/store"
+import { getParty, useMe, useTrade } from "@/lib/trade/store"
+import type { Role } from "@/lib/trade/types"
 
-import { navigation, roleFromPath, roles } from "./nav"
+import { navigation } from "./nav"
 
-function SidebarBody() {
+function SidebarBody({ role }: { role: Role }) {
   const pathname = usePathname()
-  const router = useRouter()
   const state = useTrade()
-  const role = roleFromPath(pathname)
-  const persona =
-    role === "admin" ? null : getParty(state, state.personas[role])
+  const me = useMe()
+  const name = role === "admin" ? "Admin" : getParty(state, me).name
   const items = navigation[role]
 
   return (
     <>
-      <SidebarHeader className="gap-3">
+      <SidebarHeader>
         <Logo className="px-2 py-1" />
-        <Select
-          value={role}
-          items={roles}
-          onValueChange={(value) => value && router.push(`/dashboard/${value}`)}
-        >
-          <SelectTrigger aria-label="Switch role" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {roles.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>
-            {persona ? persona.name : "Platform admin"}
-          </SidebarGroupLabel>
+          <SidebarGroupLabel>{name}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {items.map((item) => {
@@ -100,12 +71,12 @@ function SidebarBody() {
  * Sidebar stays outside the boundary: it swaps to a sheet on phones, which must
  * not happen before a suspended child has hydrated against the server HTML.
  */
-export function AppSidebar() {
+export function AppSidebar({ role }: { role: Role }) {
   return (
     <Sidebar>
       {/* It reads the URL, which deal pages only know at request time. */}
       <Suspense>
-        <SidebarBody />
+        <SidebarBody role={role} />
       </Suspense>
     </Sidebar>
   )

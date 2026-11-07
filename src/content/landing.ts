@@ -4,7 +4,7 @@
  */
 
 export const links = {
-  app: "/dashboard/exporter",
+  app: "/dashboard",
   repo: "https://github.com/PratyushPanda2005/TrustMeBro",
   whitechainDocs: "https://docs.whitechain.io/",
   whitechainExplorer: "https://explorer.testnet.whitechain.io/",
@@ -311,21 +311,21 @@ export const solutions: { title: string; items: Solution[] } = {
       description:
         "Get paid in minutes, not 60 days. Create an invoice, ship, and an investor can fund you as soon as the check is recorded onchain.",
       bullets: [
-        { icon: "trend", label: "Advance set by the deal score" },
+        { icon: "trend", label: "Advance set by the Trust Score" },
         { icon: "swap", label: "Paid in USDT on Whitechain" },
         { icon: "shield", label: "The rest arrives at settlement" },
       ],
       image: "wash-ember",
       mock: {
         title: "Ravi Exports",
-        subtitle: "Deal score 76",
+        subtitle: "Trust Score 76",
         tag: "Funded",
         tone: "success",
         statLabel: "You received",
         stat: "73,720.00 USDT",
         cells: [
           { label: "Invoice", value: "100,000 USDT" },
-          { label: "Deal score", value: "76" },
+          { label: "Trust Score", value: "76" },
           { label: "Fee", value: "1,000 USDT" },
           { label: "At settlement", value: "23,068.40" },
         ],
@@ -377,7 +377,7 @@ export const solutions: { title: string; items: Solution[] } = {
         cells: [
           { label: "You fund", value: "73,720 USDT" },
           { label: "Profit", value: "2,211.60 USDT" },
-          { label: "Deal score", value: "76" },
+          { label: "Trust Score", value: "76" },
           { label: "Term", value: "60 days" },
         ],
         feedTitle: "Evidence",
@@ -411,7 +411,7 @@ export const solutions: { title: string; items: Solution[] } = {
     {
       title: "Importers",
       description:
-        "Confirm the debt onchain and repay the contract. Each on-time repayment lowers your Risk Score and lifts the terms on your next deal.",
+        "Confirm the debt onchain and repay the contract. Each on-time repayment raises your Trust Score and lifts the terms on your next deal.",
       bullets: [
         { icon: "shield", label: "Your confirmation starts the deal" },
         { icon: "swap", label: "Repay the contract, not the exporter" },
@@ -420,14 +420,14 @@ export const solutions: { title: string; items: Solution[] } = {
       image: "wash-violet",
       mock: {
         title: "Ahmed Imports",
-        subtitle: "Risk Score 24",
+        subtitle: "Trust Score 76",
         tag: "Settled",
         tone: "success",
         statLabel: "Invoice repaid",
         stat: "100,000.00 USDT",
         cells: [
-          { label: "Risk Score", value: "24" },
-          { label: "Last score", value: "32" },
+          { label: "Trust Score", value: "76" },
+          { label: "Last score", value: "70" },
           { label: "Paid", value: "On time" },
           { label: "To the contract", value: "Yes" },
         ],
@@ -500,9 +500,9 @@ export const solutions: { title: string; items: Solution[] } = {
       },
     },
     {
-      title: "Deal score",
+      title: "Trust Score",
       description:
-        "Honesty sets the price. Repayment history lifts the deal score, and the deal score sets the advance.",
+        "Honesty sets the price. Repayment history lifts the Trust Score, and the Trust Score sets the advance.",
       bullets: [
         { icon: "shield", label: "Stored in an onchain Reputation contract" },
         { icon: "trend", label: "Each repayment raises it" },
@@ -514,7 +514,7 @@ export const solutions: { title: string; items: Solution[] } = {
         subtitle: "Same importer",
         tag: "Rising",
         tone: "success",
-        statLabel: "Deal score today",
+        statLabel: "Trust Score today",
         stat: "76",
         cells: [
           { label: "Trade 1", value: "60" },
@@ -594,14 +594,14 @@ export const stories = {
     {
       image: "wash-teal",
       stat: "60",
-      statLabel: "Deal score",
+      statLabel: "Trust Score",
       title: "Trade 1 advanced 5.82 USDT against a 10 USDT invoice",
       label: "First deal",
     },
     {
       image: "wash-gold",
       stat: "70",
-      statLabel: "Deal score",
+      statLabel: "Trust Score",
       title: "One repayment later, the same importer's next deal scored 70",
       label: "Second deal",
     },

@@ -1,7 +1,21 @@
 "use client"
 
-import { Bot, Coins, Files, ShieldAlert } from "lucide-react"
+import { useState } from "react"
+import { Bot, Coins, Files, ShieldAlert, UserPlus } from "lucide-react"
+import { isAddress } from "viem"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -11,6 +25,14 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
+import {
   Table,
   TableBody,
   TableCell,
@@ -18,14 +40,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { amount, dateTime, shortHash, usdt } from "@/lib/trade/format"
 import { platformProfit } from "@/lib/trade/profit"
-import { actions, useTrade } from "@/lib/trade/store"
+import { actions, roleOf, useMe, useTrade } from "@/lib/trade/store"
+import type { Party } from "@/lib/trade/types"
 
 import { AuditTable } from "../audit-table"
 import { MonthlyBars } from "../charts"
 import { DealTable } from "../deal-table"
-import { PageHeader, PartyScore, StatCard, StatGrid } from "../parts"
+import { PageHeader, StatCard, StatGrid, TrustScore } from "../parts"
 
 export function AdminOverview() {
   const state = useTrade()
@@ -68,7 +92,11 @@ export function AdminOverview() {
           <CardTitle>Latest deals</CardTitle>
         </CardHeader>
         <CardContent>
-          <DealTable role="admin" deals={state.deals.slice(0, 6)} />
+          <DealTable
+            role="admin"
+            deals={state.deals.slice(0, 6)}
+            action="Open"
+          />
         </CardContent>
       </Card>
     </>
@@ -82,10 +110,145 @@ export function AdminDeals() {
       <PageHeader title="All deals" description="Across every party." />
       <Card>
         <CardContent>
-          <DealTable role="admin" deals={state.deals} />
+          <DealTable role="admin" deals={state.deals} action="Open" />
         </CardContent>
       </Card>
     </>
+  )
+}
+
+const PARTY_ROLES: { value: Party["role"]; label: string }[] = [
+  { value: "investor", label: "Investor" },
+  { value: "exporter", label: "Exporter" },
+  { value: "importer", label: "Importer" },
+]
+
+function AddParty() {
+  const state = useTrade()
+  const me = useMe()
+  const [name, setName] = useState("")
+  const [wallet, setWallet] = useState("")
+  const [role, setRole] = useState<Party["role"]>("investor")
+  const [busy, setBusy] = useState(false)
+
+  const address = wallet.trim()
+  const valid = isAddress(address, { strict: false })
+  const held = valid ? roleOf(state, address) : undefined
+  const ready = name.trim() && valid && !held
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    const ok = await actions.addParty(me, {
+      name: name.trim(),
+      wallet: address,
+      role,
+    })
+    setBusy(false)
+    if (ok) {
+      setName("")
+      setWallet("")
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Add a party</CardTitle>
+        <CardDescription>
+          After KYC, this grants the wallet its role onchain. One wallet holds
+          one role, and it opens that role&apos;s dashboard.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit}>
+          <FieldGroup>
+            <div className="grid gap-6 md:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="party-name">Company</FieldLabel>
+                <Input
+                  id="party-name"
+                  maxLength={60}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </Field>
+              <Field data-invalid={Boolean(held)}>
+                <FieldLabel htmlFor="party-wallet">Wallet address</FieldLabel>
+                <Input
+                  id="party-wallet"
+                  placeholder="0x"
+                  aria-invalid={Boolean(held)}
+                  value={wallet}
+                  onChange={(event) => setWallet(event.target.value)}
+                />
+                {held ? (
+                  <FieldDescription>
+                    This wallet is already an {held}.
+                  </FieldDescription>
+                ) : null}
+              </Field>
+            </div>
+            <Field>
+              <FieldLabel>Role</FieldLabel>
+              <ToggleGroup
+                variant="outline"
+                value={[role]}
+                onValueChange={(next) =>
+                  next[0] && setRole(next[0] as Party["role"])
+                }
+              >
+                {PARTY_ROLES.map((item) => (
+                  <ToggleGroupItem key={item.value} value={item.value}>
+                    {item.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </Field>
+            <Field orientation="horizontal">
+              <Button type="submit" disabled={!ready || busy}>
+                {busy ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <UserPlus data-icon="inline-start" />
+                )}
+                Add party
+              </Button>
+            </Field>
+          </FieldGroup>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
+function RemoveParty({ party }: { party: Party }) {
+  const me = useMe()
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button size="sm" variant="outline">
+            Remove
+          </Button>
+        }
+      />
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove {party.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This revokes the wallet&apos;s {party.role} role onchain, so it
+            loses its dashboard. You can add it again later.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => actions.removeParty(me, party)}>
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -95,8 +258,9 @@ export function AdminParties() {
     <>
       <PageHeader
         title="Parties"
-        description="Wallets with a role on Finance V2, read from its RoleGranted events."
+        description="Wallets with a role on Finance V2. New parties need WBT for gas and USDT to trade."
       />
+      <AddParty />
       <Card>
         <CardContent>
           <Table>
@@ -105,9 +269,10 @@ export function AdminParties() {
                 <TableHead>Party</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Wallet</TableHead>
-                <TableHead>Score</TableHead>
+                <TableHead>Trust Score</TableHead>
                 <TableHead className="text-right">USDT</TableHead>
                 <TableHead className="text-right">WBT</TableHead>
+                <TableHead className="text-right">Access</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -121,10 +286,10 @@ export function AdminParties() {
                     </code>
                   </TableCell>
                   <TableCell>
-                    {party.role === "investor" ? (
-                      "-"
+                    {party.role === "importer" ? (
+                      <TrustScore party={party} />
                     ) : (
-                      <PartyScore party={party} />
+                      "-"
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
@@ -132,6 +297,13 @@ export function AdminParties() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {party.gas.toFixed(3)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {party.active ? (
+                      <RemoveParty party={party} />
+                    ) : (
+                      <Badge variant="secondary">Removed</Badge>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -152,6 +324,7 @@ const SPENDING_LIMITS = [
 
 export function AdminAgent() {
   const state = useTrade()
+  const me = useMe()
   const profit = platformProfit(state)
   return (
     <>
@@ -211,14 +384,14 @@ export function AdminAgent() {
                       <div className="flex justify-end gap-2">
                         <Button
                           size="sm"
-                          onClick={() => actions.approvePayment(item.id)}
+                          onClick={() => actions.approvePayment(item.id, me)}
                         >
                           Approve
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => actions.rejectPayment(item.id)}
+                          onClick={() => actions.rejectPayment(item.id, me)}
                         >
                           Reject
                         </Button>

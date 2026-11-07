@@ -11,10 +11,6 @@ import { dirname, join, resolve } from "node:path"
 
 import type { Metadata } from "@trustmebro/shared/v2"
 
-import type { Role } from "@/lib/trade/types"
-
-type Persona = Exclude<Role, "admin">
-
 export const RPC_URL =
   process.env.WHITECHAIN_RPC ?? "https://rpc.testnet.whitechain.io"
 
@@ -24,27 +20,22 @@ const configuredBlock = BigInt(process.env.WHITECHAIN_FROM_BLOCK ?? 0)
 export const FROM_BLOCK =
   configuredBlock > DEPLOYED_AT ? configuredBlock : DEPLOYED_AT
 
+/** Three of the agent's 15-second polls. */
+const AGENT_SILENCE_MS = 45_000
+
 export const EXPLORER = "https://explorer.testnet.whitechain.io"
 
 /** Onchain, parties are only addresses, so the dashboard names them here. */
 const defaultNames: Record<string, string> = {
-  "0x4DCdA2a3b4b8c8aC71d3e9224e5a80FBF9a4219C": "Ravi Exports",
-  "0xEd450f58f5287d37Ca9200930F14EbcaFa44CFF4": "Ahmed Imports",
-  "0x0dfd32c23580B576bCfEFcd418861162F4053873": "Priya Capital",
-  "0x905cA6bb7410A3683e02A7EA0657abcfF3eBb4D7": "Second investor",
+  "0x4DCdA2a3b4b8c8aC71d3e9224e5a80FBF9a4219C": "Exporter",
+  "0xEd450f58f5287d37Ca9200930F14EbcaFa44CFF4": "Importer",
+  "0x0dfd32c23580B576bCfEFcd418861162F4053873": "Investor",
+  "0x905cA6bb7410A3683e02A7EA0657abcfF3eBb4D7": "Investor 2",
 }
 
-export const partyNames: Record<string, string> = process.env.PARTY_NAMES
+const configuredNames: Record<string, string> = process.env.PARTY_NAMES
   ? JSON.parse(process.env.PARTY_NAMES)
   : defaultNames
-
-export const personas: Record<Persona, string> = process.env.PERSONAS
-  ? JSON.parse(process.env.PERSONAS)
-  : {
-      exporter: "0x4DCdA2a3b4b8c8aC71d3e9224e5a80FBF9a4219C",
-      importer: "0xEd450f58f5287d37Ca9200930F14EbcaFa44CFF4",
-      investor: "0x0dfd32c23580B576bCfEFcd418861162F4053873",
-    }
 
 const json = <T>(path: string, fallback: T): T => {
   try {
@@ -68,6 +59,8 @@ const metadataFile = process.env.V2_METADATA_FILE
   ? resolve(process.cwd(), process.env.V2_METADATA_FILE)
   : join(agentState, "trade-metadata.json")
 const labelsFile = join(agentState, "deal-labels.json")
+const namesFile = join(agentState, "party-names.json")
+const heartbeatFile = join(agentState, "agent-heartbeat.json")
 
 export type DealLabels = Record<string, { goods: string; invoiceRef: string }>
 
@@ -85,6 +78,31 @@ export function saveTrade(
 ) {
   write(metadataFile, { ...readTradeMetadata(), [id]: metadata })
   write(labelsFile, { ...readLabels(), [id]: label })
+}
+
+/** The V2 agent has no API, so it records each poll here. */
+export const agentBeating = () =>
+  Date.now() - json(heartbeatFile, { at: 0 }).at < AGENT_SILENCE_MS
+
+type SavedName = { name: string; tx: string }
+
+const savedNames = () => json<Record<string, SavedName>>(namesFile, {})
+
+/** Names the admin gave parties, over the configured ones. */
+export const readPartyNames = () => ({
+  ...configuredNames,
+  ...Object.fromEntries(
+    Object.entries(savedNames()).map(([wallet, saved]) => [wallet, saved.name]),
+  ),
+})
+
+export function savePartyName(wallet: string, name: string, tx: string) {
+  const names = savedNames()
+  // One grant names one party, so its transaction can't be replayed to rename.
+  if (Object.values(names).some((saved) => saved.tx === tx)) {
+    throw new Error("This transaction already named a party.")
+  }
+  write(namesFile, { ...names, [wallet]: { name, tx } })
 }
 
 type Payload = {

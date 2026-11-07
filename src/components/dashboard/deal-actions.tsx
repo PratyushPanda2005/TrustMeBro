@@ -14,9 +14,8 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { usdt } from "@/lib/trade/format"
 import { STAGES } from "@/lib/trade/score"
-import { actions, getParty, useTrade } from "@/lib/trade/store"
+import { actions, getParty, useMe, useTrade } from "@/lib/trade/store"
 import type { Deal, Role } from "@/lib/trade/types"
-import { useWallet } from "@/lib/trade/wallet"
 
 function ActionButton({
   label,
@@ -49,17 +48,12 @@ function ActionButton({
 function Panel({
   title,
   description,
-  signer,
   children,
 }: {
   title: string
   description: string
-  /** The wallet that has to sign. */
-  signer: string
   children: React.ReactNode
 }) {
-  const wallet = useWallet()
-  const ready = wallet.address?.toLowerCase() === signer.toLowerCase()
   return (
     <Card>
       <CardHeader>
@@ -67,11 +61,6 @@ function Panel({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {ready ? null : (
-          <p className="text-sm text-muted-foreground">
-            Sign with <code className="font-mono text-xs">{signer}</code>.
-          </p>
-        )}
         <div className="flex flex-wrap gap-2">{children}</div>
       </CardContent>
     </Card>
@@ -81,17 +70,28 @@ function Panel({
 /** Shows only what this role can do with the deal in its current state. */
 export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
   const state = useTrade()
-  const admin = state.network.admin
+  const me = useMe()
   const relay = state.relays.find(
     (item) => item.dealId === deal.id && item.expiry > deal.createdAt,
   )
+
+  if (role === "exporter" && deal.state === "Created") {
+    return (
+      <Alert>
+        <AlertTitle>Waiting for the importer</AlertTitle>
+        <AlertDescription>
+          The importer confirms this invoice from their own wallet, under
+          Approvals on the importer dashboard.
+        </AlertDescription>
+      </Alert>
+    )
+  }
 
   if (role === "importer" && deal.state === "Created") {
     return (
       <Panel
         title="Confirm this invoice"
         description="Confirming accepts the debt, and agrees that payment goes to the TrustMeBro contract."
-        signer={deal.importerId}
       >
         <ActionButton
           label="Confirm agreement"
@@ -113,7 +113,6 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
       <Panel
         title="Repay this invoice"
         description={`Pay ${usdt(deal.amount)}. The holder is paid first, then the fee, and the exporter gets the rest.`}
-        signer={deal.importerId}
       >
         <ActionButton
           label="Repay"
@@ -135,13 +134,10 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
       <Panel
         title="Fund this deal"
         description={`Pay ${usdt(terms.advance)} and hold the receivable. You get ${usdt(terms.investorDue)} back on repayment.`}
-        signer={state.personas.investor}
       >
         <ActionButton
           label="Fund deal"
-          onAction={() =>
-            actions.fund(deal, state.personas.investor, state.network.treasury)
-          }
+          onAction={() => actions.fund(deal, me, state.network.treasury)}
         />
       </Panel>
     )
@@ -154,11 +150,10 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
           <Panel
             title="Relay the paid answer"
             description={`The agent paid on Hedera in ${relay.hederaTx}. Sending this puts the signed answer onchain. ${relay.label === "DEMO_SIMULATION" ? "The evidence is simulated." : ""}`}
-            signer={admin}
           >
             <ActionButton
               label="Relay signed answer"
-              onAction={() => actions.relay(admin, relay)}
+              onAction={() => actions.relay(me, relay)}
             />
           </Panel>
         ) : (
@@ -174,13 +169,12 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
         <Panel
           title="Verify manually"
           description={`Admin override: records a check at ${STAGES[deal.shipment.minimumStage]} with no x402 payment. Use it only when the agent can't run.`}
-          signer={admin}
         >
           <ActionButton
             label="Record manual verification"
             variant="outline"
             onAction={() =>
-              actions.verifyManual(deal, admin, deal.shipment.minimumStage)
+              actions.verifyManual(deal, me, deal.shipment.minimumStage)
             }
           />
         </Panel>
@@ -205,12 +199,11 @@ export function DealActions({ deal, role }: { deal: Deal; role: Role }) {
       <Panel
         title="Mark as defaulted"
         description="The due date and grace period have passed."
-        signer={admin}
       >
         <ActionButton
           label="Mark default"
           variant="destructive"
-          onAction={() => actions.markDefault(deal, admin)}
+          onAction={() => actions.markDefault(deal, me)}
         />
       </Panel>
     )

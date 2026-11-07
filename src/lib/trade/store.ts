@@ -16,8 +16,9 @@ import {
 
 import type { TradeAction } from "@/lib/chain/trade"
 
-import type { Deal, Party, RelayPayload, TradeState } from "./types"
-import { chainActions } from "./wallet"
+import { approvalMessage } from "./format"
+import type { Deal, Party, RelayPayload, Role, TradeState } from "./types"
+import { chainActions, useWallet } from "./wallet"
 
 const POLL_MS = 5_000
 
@@ -104,6 +105,34 @@ export const getParty = (state: TradeState, id: string): Party => {
   return party
 }
 
+const same = (a?: string, b?: string) => a?.toLowerCase() === b?.toLowerCase()
+
+/** A wallet's role is what Finance V2 says, so one wallet is one dashboard. */
+export const roleOf = (
+  state: TradeState,
+  wallet?: string,
+): Role | undefined => {
+  if (!wallet) return undefined
+  if (state.admins.some((admin) => same(admin, wallet))) return "admin"
+  return state.parties.find((party) => party.active && same(party.id, wallet))
+    ?.role
+}
+
+/** Views render behind the shell's role check, so the wallet is always there. */
+export function useMe() {
+  const { address } = useWallet()
+  if (!address) throw new Error("useMe needs a connected wallet")
+  return address
+}
+
+/** Parties only see their own deals. Investors also see what's open to fund. */
+export function canView(deal: Deal, role: Role, wallet: string) {
+  if (role === "admin") return true
+  if (role === "exporter") return same(deal.exporterId, wallet)
+  if (role === "importer") return same(deal.importerId, wallet)
+  return deal.state === "Verified" || same(deal.investorId, wallet)
+}
+
 const post = async (action: TradeAction) => {
   const response = await fetch("/api/trade", {
     method: "POST",
@@ -158,7 +187,41 @@ type NewInvoice = {
   recordId: string
 }
 
+const decide = (id: string, admin: string, decision: "approve" | "reject") =>
+  run(
+    async () => {
+      const signature = await chainActions.sign(
+        admin,
+        approvalMessage(id, decision),
+      )
+      await post({ type: "decideApproval", id, decision, admin, signature })
+    },
+    `Payment ${decision === "approve" ? "approved" : "rejected"}`,
+  )
+
 export const actions = {
+  addParty: (
+    admin: string,
+    party: { name: string; wallet: string; role: Party["role"] },
+  ) =>
+    run(async () => {
+      const receipt = await chainActions.grantRole(
+        admin,
+        party.role,
+        party.wallet,
+      )
+      await post({
+        type: "saveParty",
+        wallet: party.wallet,
+        name: party.name,
+        tx: receipt.transactionHash,
+      })
+    }, `${party.name} added as ${party.role}`),
+  removeParty: (admin: string, party: Party) =>
+    run(
+      () => chainActions.revokeRole(admin, party.role, party.id),
+      `${party.name} removed`,
+    ),
   createInvoice: (input: NewInvoice) =>
     run(async () => {
       const prepared = prepareTrade(
@@ -232,14 +295,6 @@ export const actions = {
       () => chainActions.markDefault(caller, deal.id),
       "Deal marked as defaulted",
     ),
-  approvePayment: (id: string) =>
-    run(
-      () => post({ type: "decideApproval", id, decision: "approve" }),
-      "Payment approved",
-    ),
-  rejectPayment: (id: string) =>
-    run(
-      () => post({ type: "decideApproval", id, decision: "reject" }),
-      "Payment rejected",
-    ),
+  approvePayment: (id: string, admin: string) => decide(id, admin, "approve"),
+  rejectPayment: (id: string, admin: string) => decide(id, admin, "reject"),
 }

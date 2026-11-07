@@ -32,10 +32,12 @@ The team deployed **Finance V2** on Whitechain at `0x71e3c6aE367A0D8517A0DA7cC48
 | Failed check | Exporter score drops | No signature, so the deal can't be funded |
 | Claims | Exporter declares after shipping | Committed in the invoice as hashes |
 | Term | Set per deal | 60 days, plus 7 days' grace |
+| Importer starting trust | Set by the admin | No such function. Everyone starts at the contract's default |
+| Access | Each wallet holds one role | The dashboard enforces this. The contract would allow two roles on one wallet |
 
 Live example from the fork test, invoice 10 USDT at deal score 76: advance 7.372, investor gets back 7.59316, fee 0.10, exporter gets 2.30684 at settlement.
 
-The importer's Risk Score on screen is 100 minus the contract's score. The contract doesn't store a risk figure.
+The dashboard shows one score: the importer's Trust Score, which is the contract's Reputation score. New importers start at 60, and the score is capped at 93. Exporters have no score. Advance = floor(floor(invoice × 97%) × Trust Score ÷ 100). Investor profit = floor(advance × 3%). Platform fee = floor(invoice × 1%). The exporter gets the rest at settlement.
 
 ## 2. Problem
 
@@ -63,7 +65,7 @@ The importer's Risk Score on screen is 100 minus the contract's score. The contr
 | Investor | Priya Capital | Yield tied to real trade | Reviews evidence and scores, funds the deal, holds the receivable NFT | Whitechain |
 | x402 verifier | `POST /verify` | Paid per check | Returns observed facts, signed with EIP-712 | Hedera payment |
 | AI agent | TypeScript service | Stay inside its limits | Watches claims, pays for checks, relays answers, logs everything | Hedera and Whitechain |
-| Admin | The team | Keep the allowlist clean | Runs KYC and sets an importer's starting trust. Cannot change scores | Whitechain |
+| Admin | The team | Keep the allowlist clean | Runs KYC and adds or removes parties. Cannot change scores | Whitechain |
 
 ## 5. Goals and non-goals
 
@@ -116,7 +118,7 @@ flowchart TD
 
 **In words**
 
-1. **KYC.** Admin allowlists each wallet. One KYC is one address and one role.
+1. **KYC.** Admin adds each wallet on the Parties page, which grants its role onchain. One KYC is one address and one role, and that role decides the one dashboard the wallet can open.
 2. **Create.** The exporter creates the invoice. The contract stores its hash and checks the credit limit and the 40% score floor.
 3. **Approve.** The importer accepts the debt and agrees to pay the contract.
 4. **Claim.** After shipping, the exporter commits the weight, status and document hash.
@@ -318,11 +320,11 @@ The agent never sends claims to the verifier. The claims are already onchain, so
 |---|---|---|---|
 | F1 | Create an invoice with a credit limit and terms preview | Exporter | Done |
 | F2 | Declare value claims and pick a demo scenario | Exporter | Done |
-| F3 | See Trust Score, score history, advance and credit | Exporter | Done |
+| F3 | See the importer's Trust Score, advance and earnings on each deal | Exporter | Done |
 | F4 | See earnings and the cost of finance | Exporter | Done |
 | F5 | Approve invoices | Importer | Done |
 | F6 | Pay in full or in part | Importer | Done |
-| F7 | See Risk Score and payment history | Importer | Done |
+| F7 | See Trust Score, how it sets payouts, and payment history | Importer | Done |
 | F8 | Browse verified deals with both scores | Investor | Done |
 | F9 | See evidence: claimed against observed | Investor | Done |
 | F10 | Fund a deal and hold the receivable NFT | Investor | Done |
@@ -330,7 +332,7 @@ The agent never sends claims to the verifier. The claims are already onchain, so
 | F12 | See all deals, parties and the fee split | Admin | Done |
 | F13 | See agent activity and live Hedera audit entries | Admin | Done |
 | F14 | Approve or reject over-limit payments | Admin | Partly |
-| F15 | Manage KYC from the dashboard | Admin | Not yet |
+| F15 | Add and remove parties from the dashboard, onchain | Admin | Done |
 | F16 | Sign actions in the user's own wallet | All | Done |
 | F17 | Connect to deployed Whitechain contracts | All | Done |
 | F18 | Real x402 payment inside this app's flow | Agent | Partly |

@@ -67,6 +67,10 @@ async function main() {
         mode,
         process.env.SHIPPING_PROVIDER_MODULE,
         process.env.DEMO_EVIDENCE_FILE,
+        process.env.DEMO_EVIDENCE_AUTO ===
+          "I_UNDERSTAND_SHIPMENT_EVIDENCE_IS_SIMULATED"
+          ? chainReader(cfg.RPC_URL)
+          : undefined,
       ),
   );
   const signer = serviceSigner(key!),

@@ -37,3 +37,7 @@ export const month = (at: number) => monthFormat.format(at)
 
 export const shortHash = (hash: string) =>
   hash.length > 18 ? `${hash.slice(0, 10)}...${hash.slice(-6)}` : hash
+
+/** What an admin signs to decide a payment. Each id can only be decided once. */
+export const approvalMessage = (id: string, decision: string) =>
+  `TrustMeBro: ${decision} agent payment ${id}`

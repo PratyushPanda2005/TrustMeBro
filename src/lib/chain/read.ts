@@ -3,6 +3,7 @@ import "server-only"
 import { USDT_ADDRESS } from "@trustmebro/shared"
 import {
   ADMIN,
+  ADMIN_ROLE,
   V2_CHAIN,
   V2_FINANCE,
   financeV2Abi,
@@ -33,9 +34,9 @@ import {
   EXPLORER,
   FROM_BLOCK,
   RPC_URL,
-  partyNames,
-  personas,
+  agentBeating,
   readLabels,
+  readPartyNames,
   readRelayPayloads,
   readTradeMetadata,
 } from "./config"
@@ -105,14 +106,15 @@ const short = (address: unknown) =>
 
 const describe: Record<
   string,
-  (args: Record<string, unknown>) => [string, string?]
+  (args: Record<string, unknown>, exporter: string) => [string, string?]
 > = {
   TradeCreated: (args) => [
     "Invoice created",
     `${usdt(args.face as bigint)} USDT`,
   ],
-  AgreementConfirmed: (args) => [
-    "Agreement confirmed",
+  // Creating a trade signs it for the exporter, so only the importer confirms.
+  AgreementConfirmed: (args, exporter) => [
+    args.signer === exporter ? "Exporter signed" : "Importer confirmed",
     `Signed by ${short(args.signer)}`,
   ],
   ShipmentChecked: (args) => [
@@ -214,7 +216,10 @@ async function readFresh(): Promise<TradeState> {
         own
           .filter((log) => describe[log.eventName])
           .map(async (log) => {
-            const [label, detail] = describe[log.eventName](log.args)
+            const [label, detail] = describe[log.eventName](
+              log.args,
+              raw.exporter,
+            )
             return {
               at: await timeOf(log.blockNumber),
               label,
@@ -300,13 +305,30 @@ async function readFresh(): Promise<TradeState> {
   )
 
   const members = new Map<string, Party["role"]>()
+  const removed = new Set<string>()
+  const admins = new Set<string>()
   for (const log of logs) {
+    if (log.eventName !== "RoleGranted" && log.eventName !== "RoleRevoked") {
+      continue
+    }
+    const account = String(log.args.account)
+    const granted = log.eventName === "RoleGranted"
+    if (log.args.role === ADMIN_ROLE) {
+      if (granted) admins.add(account)
+      else admins.delete(account)
+      continue
+    }
     const role = roleByHash.get(String(log.args.role))
-    if (log.eventName === "RoleGranted" && role) {
-      members.set(String(log.args.account), role)
+    if (!role) continue
+    if (granted) {
+      members.set(account, role)
+      removed.delete(account)
+    } else if (members.get(account) === role) {
+      removed.add(account)
     }
   }
 
+  const names = readPartyNames()
   const parties = await Promise.all(
     [...members].map(async ([id, role]): Promise<Party> => {
       const wallet = id as Address
@@ -327,8 +349,9 @@ async function readFresh(): Promise<TradeState> {
       ])
       return {
         id,
-        name: partyNames[id] ?? short(id),
+        name: names[id] ?? short(id),
         role,
+        active: !removed.has(id),
         score: Number(score),
         usdt: usdt(balance),
         gas: Number(formatEther(gas)),
@@ -341,7 +364,7 @@ async function readFresh(): Promise<TradeState> {
             at: deal.fundedAt as number,
             dealId: deal.id,
             score: deal.terms?.score ?? 0,
-            reason: "Deal score at funding",
+            reason: "Trust Score at funding",
           }))
           .sort((a, b) => a.at - b.at),
       }
@@ -358,13 +381,13 @@ async function readFresh(): Promise<TradeState> {
       treasury,
       explorer: EXPLORER,
     },
-    personas,
+    admins: [...admins],
     parties,
     deals: deals.reverse(),
     hedera,
     pending: approvals.pending,
     relays: readRelayPayloads(),
-    agentOnline: approvals.online,
+    agentOnline: approvals.online || agentBeating(),
   }
 }
 

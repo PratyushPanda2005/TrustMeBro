@@ -2,7 +2,7 @@ import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { partyScoreView, type ScoreView } from "@/lib/trade/score"
+import { trustScoreView, type ScoreView } from "@/lib/trade/score"
 import { shortHash } from "@/lib/trade/format"
 import type { DealState, Party, TxRef } from "@/lib/trade/types"
 
@@ -91,9 +91,9 @@ export function ScoreBadge({ view }: { view: ScoreView }) {
   return <Badge variant={toneVariant[view.tone]}>{view.band}</Badge>
 }
 
-/** "60 Medium" for an exporter, Risk Score for an importer. */
-export function PartyScore({ party }: { party: Party }) {
-  const view = partyScoreView(party)
+/** The importer's Trust Score, such as "76 High". */
+export function TrustScore({ party }: { party: Party }) {
+  const view = trustScoreView(party.score)
   return (
     <span className="flex items-center gap-2 whitespace-nowrap">
       <span className="tabular-nums">{view.value}</span>

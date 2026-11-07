@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { FileSearch } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import {
   Empty,
   EmptyDescription,
@@ -22,7 +23,7 @@ import { amount, date } from "@/lib/trade/format"
 import { getParty, useTrade } from "@/lib/trade/store"
 import type { Deal, Role } from "@/lib/trade/types"
 
-import { PartyScore, StateBadge } from "./parts"
+import { StateBadge, TrustScore } from "./parts"
 
 type Column = {
   head: string
@@ -35,11 +36,14 @@ export function DealTable({
   deals,
   variant = "standard",
   emptyText = "Nothing here yet.",
+  action,
 }: {
   role: Role
   deals: Deal[]
   variant?: "standard" | "market"
   emptyText?: string
+  /** Adds a button to each row that opens the deal, where this party acts. */
+  action?: string
 }) {
   const state = useTrade()
   const name = (id: string) => getParty(state, id).name
@@ -49,15 +53,9 @@ export function DealTable({
       ? [
           { head: "Goods", cell: (deal) => deal.goods },
           {
-            head: "Exporter Trust Score",
+            head: "Importer Trust Score",
             cell: (deal) => (
-              <PartyScore party={getParty(state, deal.exporterId)} />
-            ),
-          },
-          {
-            head: "Importer Risk Score",
-            cell: (deal) => (
-              <PartyScore party={getParty(state, deal.importerId)} />
+              <TrustScore party={getParty(state, deal.importerId)} />
             ),
           },
           {
@@ -114,6 +112,7 @@ export function DealTable({
               {column.head}
             </TableHead>
           ))}
+          {action ? <TableHead /> : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -135,6 +134,17 @@ export function DealTable({
                 {column.cell(deal)}
               </TableCell>
             ))}
+            {action ? (
+              <TableCell className="text-right">
+                <Button
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link href={`/dashboard/${role}/deals/${deal.id}`} />}
+                >
+                  {action}
+                </Button>
+              </TableCell>
+            ) : null}
           </TableRow>
         ))}
       </TableBody>

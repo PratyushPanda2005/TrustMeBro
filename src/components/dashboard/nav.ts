@@ -18,13 +18,6 @@ import type { Role } from "@/lib/trade/types"
 
 export type NavItem = { title: string; href: string; icon: LucideIcon }
 
-export const roles: { value: Role; label: string }[] = [
-  { value: "exporter", label: "Exporter" },
-  { value: "importer", label: "Importer" },
-  { value: "investor", label: "Investor" },
-  { value: "admin", label: "Admin" },
-]
-
 const base = "/dashboard"
 
 export const navigation: Record<Role, NavItem[]> = {
@@ -32,7 +25,6 @@ export const navigation: Record<Role, NavItem[]> = {
     { title: "Overview", href: `${base}/exporter`, icon: LayoutDashboard },
     { title: "New invoice", href: `${base}/exporter/new`, icon: FilePlus2 },
     { title: "My deals", href: `${base}/exporter/deals`, icon: Files },
-    { title: "Trust Score", href: `${base}/exporter/trust-score`, icon: Gauge },
     { title: "Earnings", href: `${base}/exporter/earnings`, icon: TrendingUp },
   ],
   importer: [
@@ -43,7 +35,7 @@ export const navigation: Record<Role, NavItem[]> = {
       icon: ClipboardCheck,
     },
     { title: "Payments", href: `${base}/importer/payments`, icon: Wallet },
-    { title: "Risk Score", href: `${base}/importer/risk-score`, icon: Gauge },
+    { title: "Trust Score", href: `${base}/importer/trust-score`, icon: Gauge },
   ],
   investor: [
     { title: "Overview", href: `${base}/investor`, icon: LayoutDashboard },
@@ -66,11 +58,4 @@ export const navigation: Record<Role, NavItem[]> = {
       icon: BadgeDollarSign,
     },
   ],
-}
-
-export const roleFromPath = (pathname: string): Role => {
-  const segment = pathname.split("/")[2]
-  return roles.some((role) => role.value === segment)
-    ? (segment as Role)
-    : "exporter"
 }

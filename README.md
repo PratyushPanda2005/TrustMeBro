@@ -32,7 +32,7 @@ A trade's check comes from one of two places:
 - **Paid check:** follow `V2_METAMASK_DEMO.md`, using `npm run setup:v2-demo -- "--credentials=PATH"` in `services/verifier` to create both `.env` files. For a trade made in the dashboard, run `npm run demo-evidence -- --trade-id=ID` just before the check. The agent's signed answer appears on the admin deal page, ready to relay from MetaMask.
 - **Manual check:** the admin records it from the same page, with no x402 payment. This is what trades 1 and 2 used.
 
-Set `PARTY_NAMES` and `PERSONAS` to change the wallets the dashboards show. New trades write their shipment details to `Hedera_Agentic_Payments/services/agent/.state/v2/`, where the agent reads them. This needs a writable disk, so hosting needs a small database instead.
+Connecting a wallet opens the dashboard for its role on Finance V2. The admin adds and removes parties on the Parties page, and `PARTY_NAMES` sets the names of existing ones. New trades write their shipment details to `Hedera_Agentic_Payments/services/agent/.state/v2/`, where the agent reads them. This needs a writable disk, so hosting needs a small database instead.
 
 ## Scripts
 
